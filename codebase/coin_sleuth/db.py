@@ -176,15 +176,8 @@ def build_statistics_database(N,
     print("Statistics database build complete!")
     
 
-# Example usage:
-build_statistics_database(5, csv_export=True, verbose=True)
+# Build
+N = int(input("Build statistics database for length: "))
+print(N)
+build_statistics_database(N, csv_export=True, verbose=True)
 
-# Example usage:
-# N = 5
-# export_path = 'data'
-# observations_df = build_observations_df(N, export_path)
-# print(observations_df)
-# expectations_df = build_expectations_df(observations_df, export_path)
-# print(expectations_df)
-# statistics_df = build_statistics_df(observations_df, expectations_df, export_path)
-# print(statistics_df)
