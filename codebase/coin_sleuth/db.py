@@ -1,4 +1,5 @@
 import os
+import argparse
 from itertools import product
 
 import numpy as np
@@ -176,8 +177,16 @@ def build_statistics_database(N,
     print("Statistics database build complete!")
     
 
-# Build
-N = int(input("Build statistics database for length: "))
-print(N)
-build_statistics_database(N, csv_export=True, verbose=True)
+def run():
+    parser = argparse.ArgumentParser(description='Build a statistics database for binary strings.')
+    parser.add_argument('depth', type=int, help='The depth of statistics to build.')
+    parser.add_argument('--csv', action='store_true', help='Enable CSV export.')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output.')
+
+    args = parser.parse_args()
+
+    build_statistics_database(args.depth, csv_export=args.csv, verbose=args.verbose)
+
+if __name__ == '__main__':
+    run()
 
