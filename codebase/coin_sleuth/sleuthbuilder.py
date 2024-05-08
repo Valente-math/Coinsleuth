@@ -5,7 +5,6 @@ from itertools import product
 import numpy as np
 import pandas as pd
 
-COMP_LIMIT = 20
 
 def get_run_counts(flip_sequence):
     if not flip_sequence:
@@ -31,7 +30,7 @@ def get_run_counts(flip_sequence):
     return counts
 
 
-def build_observations_df(N):
+def build_observations_df(N, COMP_LIMIT=20):
     # Check if N exceeds the computational limit to decide on the generation method
     if N > COMP_LIMIT:
         # Use random sampling for large N
@@ -59,7 +58,7 @@ def build_expectations_df(observations_df):
 
     # Expected run count floor value:
     # This would only be used if N > COMP_LIMIT and observations are sampled
-    MIN_EXPECTATION = 2**(-N)
+    MIN_EXPECTATION = (0.5)**(N)
 
     # Calculate the expected counts for each run length up to 'max_length'
     expected_counts = []
@@ -87,8 +86,7 @@ def build_statistics_df(observations_df, expectations_df):
     for index, row in observations_df.iterrows():
         observed_counts = row[1:].values.astype(float)
         # Calculate the 𝜒^2 statistic
-        chi_squared = np.sum(
-            (observed_counts - expected_counts)**2 / expected_counts)
+        chi_squared = np.sum((observed_counts - expected_counts)**2 / expected_counts)
         chi_squared_results.append((row['key'], chi_squared))
 
     # Create a DataFrame from the results
@@ -101,6 +99,35 @@ def build_statistics_df(observations_df, expectations_df):
     statistics_df['p_value'] = [
         np.mean(all_chi_squared_values >= x) for x in all_chi_squared_values
     ]
+
+    return statistics_df
+
+
+def build_statistics_df_v2(observations_df, expectations_df):
+    # Extract expected counts from the expectations_df
+    expected_counts = expectations_df.iloc[0, 1:].values.astype(float)
+
+    # Prepare to store chi-squared values
+    chi_squared_results = []
+
+    # Iterate over each row in observations_df to calculate chi-squared values
+    for index, row in observations_df.iterrows():
+        observed_counts = row[1:].values.astype(float)
+        # Calculate the chi-squared statistic
+        chi_squared = np.sum((observed_counts - expected_counts)**2 / expected_counts)
+        chi_squared_results.append((row['key'], chi_squared))
+
+    # Create a DataFrame from the results
+    statistics_df = pd.DataFrame(chi_squared_results, columns=['key', 'chi_squared'])
+
+    # Sort the DataFrame by chi-squared values in descending order
+    statistics_df.sort_values('chi_squared', ascending=False, inplace=True)
+    statistics_df.reset_index(drop=True, inplace=True)
+
+    # Group by chi-squared values and find average rank for tied groups
+    statistics_df['rank'] = statistics_df['chi_squared'].rank(method='average', ascending=False)
+    total = len(statistics_df)
+    statistics_df['p_value'] = statistics_df['rank'].apply(lambda x: (total - x + 1) / total)
 
     return statistics_df
 
@@ -186,6 +213,7 @@ def get_p_value_for_string(binary_string):
         else:
             return "No data available for strings of this length."
 
+# Example usage:
 # build_statistics_database(1,10,
 #                            filename='test_statistics_database.h5',
 #                            store_observations=True,
