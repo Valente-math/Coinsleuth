@@ -5,6 +5,7 @@ from itertools import product
 import numpy as np
 import pandas as pd
 
+COMP_LIMIT = 20
 
 def get_run_counts(flip_sequence):
     if not flip_sequence:
@@ -31,8 +32,13 @@ def get_run_counts(flip_sequence):
 
 
 def build_observations_df(N):
-    # Generate all binary sequences of length N
-    sequences = [''.join(seq) for seq in product('01', repeat=N)]
+    # Check if N exceeds the computational limit to decide on the generation method
+    if N > COMP_LIMIT:
+        # Use random sampling for large N
+        sequences = [''.join(np.random.choice(['0', '1'], N)) for _ in range(2**COMP_LIMIT)]
+    else:
+        # Generate all possible binary sequences for N <= 20
+        sequences = [''.join(seq) for seq in product('01', repeat=N)]
 
     # Calculate run counts for each sequence
     data = []
@@ -51,25 +57,26 @@ def build_expectations_df(observations_df):
     # Extract sequence length N
     N = len(observations_df.iloc[0]['key'])
 
+    # Expected run count floor value:
+    # This would only be used if N > COMP_LIMIT and observations are sampled
+    MIN_EXPECTATION = 2**(-N)
+
     # Calculate the expected counts for each run length up to 'max_length'
     expected_counts = []
     for run_length in range(1, N + 1):
         # Calculate the mean count for the current run length
-        mean_count = observations_df[f'runs_{run_length}'].mean()
+        mean_count = max(observations_df[f'runs_{run_length}'].mean(), MIN_EXPECTATION)
         expected_counts.append(mean_count)
 
     # Create a new DataFrame for the expectation data
     # (there will be only one row in this DataFrame)
-    columns = ['length'] + [f'expected_runs_{i+1}' for i in range(N)]
+    columns = ['length'] + [f'exp_runs_{i+1}' for i in range(N)]
     expectations_df = pd.DataFrame([[N] + expected_counts], columns=columns)
 
     return expectations_df
 
 
 def build_statistics_df(observations_df, expectations_df):
-    # Extract sequence length N
-    N = len(observations_df.iloc[0]['key'])
-
     # Extract expected counts from the expectations_df
     expected_counts = expectations_df.iloc[0, 1:].values.astype(float)
 
@@ -98,7 +105,7 @@ def build_statistics_df(observations_df, expectations_df):
     return statistics_df
 
 
-def build_statistics_database(N,
+def build_statistics_database(lower, upper,
                               filename='statistics_database.h5',
                               store_observations=False,
                               store_expectations=False,
@@ -120,14 +127,14 @@ def build_statistics_database(N,
             return f'/{df_name}/length_{n}'
 
         # Build and add the DataFrames
-        for n in range(1, N + 1):
+        for n in range(lower, upper + 1):
             statistics_key = get_key(n, 'statistics')
 
             # Check if statistics have already been computed
             if statistics_key in existing_keys:
                 print(f'Found key: {statistics_key}')
                 continue
-            elif verbose:
+            if verbose:
                 print(f"Building and storing statistics for {n}-strings...")
 
             # Build the observations DataFrame
@@ -157,10 +164,10 @@ def build_statistics_database(N,
 
     print("Statistics database build complete!")
 
-build_statistics_database(20,
-                           filename='large_statistics_database.h5',
-                           store_observations=False,
-                           store_expectations=False,
+build_statistics_database(5,10,
+                           filename='test_statistics_database.h5',
+                           store_observations=True,
+                           store_expectations=True,
                            verbose=True)
 
 # def run():
