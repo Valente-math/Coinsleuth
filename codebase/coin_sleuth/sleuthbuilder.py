@@ -5,24 +5,29 @@ from itertools import product
 import numpy as np
 import pandas as pd
 
+# Conventions:
+# 1) A 'sequence' is a binary string that represents a sequence of coin flips. 
+# 2) The variable 'N' reprents the length of the sequences under consideration.
+# 3) 
 
-def get_run_counts(flip_sequence):
-    if not flip_sequence:
+
+def get_run_counts(sequence):
+    if not sequence:
         return []
 
-    N = len(flip_sequence)
+    N = len(sequence)
     counts = [0] * N
     current_run_length = 1
-    current_char = flip_sequence[0]
+    current_char = sequence[0]
 
     for i in range(1, N):
-        if flip_sequence[i] == current_char:
+        if sequence[i] == current_char:
             current_run_length += 1
         else:
             if current_run_length <= N:
                 counts[current_run_length - 1] += 1
             current_run_length = 1
-            current_char = flip_sequence[i]
+            current_char = sequence[i]
 
     if current_run_length <= N:
         counts[current_run_length - 1] += 1
@@ -75,7 +80,7 @@ def build_expectations_df(observations_df):
     return expectations_df
 
 
-def build_statistics_df(observations_df, expectations_df):
+def build_statistics_df_v1(observations_df, expectations_df):
     # Extract expected counts from the expectations_df
     expected_counts = expectations_df.iloc[0, 1:].values.astype(float)
 
@@ -124,10 +129,20 @@ def build_statistics_df_v2(observations_df, expectations_df):
     statistics_df.sort_values('chi_squared', ascending=False, inplace=True)
     statistics_df.reset_index(drop=True, inplace=True)
 
-    # Group by chi-squared values and find average rank for tied groups
-    statistics_df['rank'] = statistics_df['chi_squared'].rank(method='average', ascending=False)
-    total = len(statistics_df)
-    statistics_df['p_value'] = statistics_df['rank'].apply(lambda x: (total - x + 1) / total)
+    # Calculate p-values using the method described
+    p_values = np.zeros(len(statistics_df))
+    j = 0  # Flag to mark the start of a new block of distinct chi-squared values
+    total = len(statistics_df)  # Total number of observations
+
+    # Iterate over the sorted DataFrame
+    for i in range(total):
+        if i == total - 1 or statistics_df.loc[i, 'chi_squared'] > statistics_df.loc[i + 1, 'chi_squared']:
+            # Calculate p-value for the block
+            p_value = (i + 1) / total
+            p_values[j:i+1] = p_value
+            j = i + 1  # Move the start of the next block to the next element
+
+    statistics_df['p_value'] = p_values
 
     return statistics_df
 
@@ -183,7 +198,7 @@ def build_statistics_database(lower, upper,
                 print(f"\tExpectations DataFrame for {n}-strings built and saved.")
 
             # Build the statistics DataFrame
-            statistics_df = build_statistics_df(observations_df, expectations_df)
+            statistics_df = build_statistics_df_v1(observations_df, expectations_df)
             store.put(statistics_key, statistics_df, format='table', data_columns=True)
             if verbose:
                 print(f"\tStatistics DataFrame for {n}-strings built and saved.\n")
@@ -192,12 +207,10 @@ def build_statistics_database(lower, upper,
     print("Statistics database build complete!")
 
 
-def get_p_value_for_string(binary_string):
-    # Assume the HDF5 file is stored in the 'data' folder
-    file_path = 'data/statistics_database.h5'
+def get_p_value_for_sequence(sequence, file_path='data/statistics_database.h5'):
     
     # Determine the length of the binary string to find the corresponding dataset
-    length = len(binary_string)
+    length = len(sequence)
     key = f'/statistics/length_{length}'
 
     # Open the HDF5 file and read the specific dataset
@@ -205,7 +218,7 @@ def get_p_value_for_string(binary_string):
         if key in store:
             df = store[key]
             # Check if the binary string is in the DataFrame
-            result = df[df['key'] == binary_string]
+            result = df[df['key'] == sequence]
             if not result.empty:
                 return result['p_value'].values[0]
             else:
