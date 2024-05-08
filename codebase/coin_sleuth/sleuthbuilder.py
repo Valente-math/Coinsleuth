@@ -164,11 +164,33 @@ def build_statistics_database(lower, upper,
 
     print("Statistics database build complete!")
 
-build_statistics_database(5,10,
-                           filename='test_statistics_database.h5',
-                           store_observations=True,
-                           store_expectations=True,
-                           verbose=True)
+
+def get_p_value_for_string(binary_string):
+    # Assume the HDF5 file is stored in the 'data' folder
+    file_path = 'data/statistics_database.h5'
+    
+    # Determine the length of the binary string to find the corresponding dataset
+    length = len(binary_string)
+    key = f'/statistics/length_{length}'
+
+    # Open the HDF5 file and read the specific dataset
+    with pd.HDFStore(file_path, 'r') as store:
+        if key in store:
+            df = store[key]
+            # Check if the binary string is in the DataFrame
+            result = df[df['key'] == binary_string]
+            if not result.empty:
+                return result['p_value'].values[0]
+            else:
+                return "String not found in the database."
+        else:
+            return "No data available for strings of this length."
+
+# build_statistics_database(1,10,
+#                            filename='test_statistics_database.h5',
+#                            store_observations=True,
+#                            store_expectations=True,
+#                            verbose=True)
 
 # def run():
 #     parser = argparse.ArgumentParser(description='Build a statistics database for binary strings.')
@@ -183,3 +205,4 @@ build_statistics_database(5,10,
 # if __name__ == '__main__':
 #     run()
 
+print("Builder ready.")
