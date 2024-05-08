@@ -2,7 +2,7 @@
 name = "coin-sleuth"
 version = "0.1.0"
 description = ""
-authors = ["Nick Valente <50583230+Valente-math@users.noreply.github.com>"]
+authors = ["Nick Valente <valente.math@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]

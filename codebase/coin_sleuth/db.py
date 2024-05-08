@@ -30,15 +30,7 @@ def get_run_counts(flip_sequence):
     return counts
 
 
-def export_to_csv(N, title, df, export_path):
-    if export_path is not None:
-        folder_path = os.path.join(export_path, f'{N}')
-        os.makedirs(folder_path, exist_ok=True)
-        file_name = f'{title}_df_{N}.csv'
-        df.to_csv(os.path.join(folder_path, file_name), index=False)
-
-
-def build_observations_df(N, export_path=None):
+def build_observations_df(N):
     # Generate all binary sequences of length N
     sequences = [''.join(seq) for seq in product('01', repeat=N)]
 
@@ -52,13 +44,10 @@ def build_observations_df(N, export_path=None):
     columns = ['key'] + [f'runs_{i+1}' for i in range(N)]
     observations_df = pd.DataFrame(data, columns=columns)
 
-    # Export to CSV
-    export_to_csv(N, 'observations', observations_df, export_path)
-
     return observations_df
 
 
-def build_expectations_df(observations_df, export_path=None):
+def build_expectations_df(observations_df):
     # Extract sequence length N
     N = len(observations_df.iloc[0]['key'])
 
@@ -74,13 +63,10 @@ def build_expectations_df(observations_df, export_path=None):
     columns = ['length'] + [f'expected_runs_{i+1}' for i in range(N)]
     expectations_df = pd.DataFrame([[N] + expected_counts], columns=columns)
 
-    # Export to CSV
-    export_to_csv(N, 'expectations', expectations_df, export_path)
-
     return expectations_df
 
 
-def build_statistics_df(observations_df, expectations_df, export_path=None):
+def build_statistics_df(observations_df, expectations_df):
     # Extract sequence length N
     N = len(observations_df.iloc[0]['key'])
 
@@ -109,15 +95,13 @@ def build_statistics_df(observations_df, expectations_df, export_path=None):
         np.mean(all_chi_squared_values >= x) for x in all_chi_squared_values
     ]
 
-    # Export to CSV
-    export_to_csv(N, 'statistics', statistics_df, export_path)
-
     return statistics_df
 
 
 def build_statistics_database(N,
                               filename='statistics_database.h5',
-                              csv_export=False,
+                              store_observations=False,
+                              store_expectations=False,
                               verbose=False):
     # Define the path to the HDF5 file within the 'data' folder
     folder_path = 'data'
@@ -127,66 +111,68 @@ def build_statistics_database(N,
     os.makedirs(folder_path, exist_ok=True)
 
     # Initialize or open the HDF5 file
-    with pd.HDFStore(
-            file_path,
-            'a') as store:  # 'a' for read/write if it exists, create otherwise
+    with pd.HDFStore(file_path, 'a') as store:  # 'a' for read/write if it exists, create otherwise
+
         # Determine which dataframes already exist
         existing_keys = set(store.keys())
-        expected_keys = {f'/statistics/length_{n}' for n in range(1, N + 1)}
 
-        # Find out which lengths need to be added or updated
-        keys_to_add = expected_keys - existing_keys
+        def get_key(n, df_name):
+            return f'/{df_name}/length_{n}'
 
-        # Build and add the DataFrames for the new lengths
-        for key in keys_to_add:
-            length = int(key.split('_')[-1])
-            if verbose:
-                print(
-                    f"Building and storing statistics for length {length}...")
+        # Build and add the DataFrames
+        for n in range(1, N + 1):
+            statistics_key = get_key(n, 'statistics')
 
-            # Set CSV export path
-            csv_export_path = folder_path if csv_export else None
+            # Check if statistics have already been computed
+            if statistics_key in existing_keys:
+                print(f'Found key: {statistics_key}')
+                continue
+            elif verbose:
+                print(f"Building and storing statistics for {n}-strings...")
 
             # Build the observations DataFrame
-            observations_df = build_observations_df(length, csv_export_path)
+            observations_df = build_observations_df(n)
+            if store_observations:
+                observations_key = get_key(n, 'observations')
+                if observations_key not in existing_keys:
+                    store.put(observations_key, observations_df, format='table', data_columns=True)
             if verbose:
-                print(
-                    f"\tObservations DataFrame for length {length} built and saved."
-                )
+                print(f"\tObservations DataFrame for {n}-strings built and saved.")
 
             # Build the expectations DataFrame
-            expectations_df = build_expectations_df(observations_df,
-                                                    csv_export_path)
+            expectations_df = build_expectations_df(observations_df)
+            if store_expectations:
+                expectations_key = get_key(n, 'expectations')
+                if expectations_key not in existing_keys:
+                    store.put(expectations_key, expectations_df, format='table', data_columns=True)
             if verbose:
-                print(
-                    f"\tExpectations DataFrame for length {length} built and saved."
-                )
+                print(f"\tExpectations DataFrame for {n}-strings built and saved.")
 
             # Build the statistics DataFrame
-            statistics_df = build_statistics_df(observations_df,
-                                                expectations_df,
-                                                csv_export_path)
+            statistics_df = build_statistics_df(observations_df, expectations_df)
+            store.put(statistics_key, statistics_df, format='table', data_columns=True)
             if verbose:
-                print(
-                    f"\tStatistics DataFrame for length {length} built and saved.\n"
-                )
+                print(f"\tStatistics DataFrame for {n}-strings built and saved.\n")
 
-            # Store the DataFrame in the HDF5 file with a key corresponding to the string length
-            store.put(key, statistics_df, format='table', data_columns=True)
 
     print("Statistics database build complete!")
-    
 
-def run():
-    parser = argparse.ArgumentParser(description='Build a statistics database for binary strings.')
-    parser.add_argument('depth', type=int, help='The depth of statistics to build.')
-    parser.add_argument('--csv', action='store_true', help='Enable CSV export.')
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose output.')
+build_statistics_database(20,
+                           filename='large_statistics_database.h5',
+                           store_observations=False,
+                           store_expectations=False,
+                           verbose=True)
 
-    args = parser.parse_args()
+# def run():
+#     parser = argparse.ArgumentParser(description='Build a statistics database for binary strings.')
+#     parser.add_argument('depth', type=int, help='The depth of statistics to build.')
+#     parser.add_argument('--csv', action='store_true', help='Enable CSV export.')
+#     parser.add_argument('--verbose', action='store_true', help='Enable verbose output.')
 
-    build_statistics_database(args.depth, csv_export=args.csv, verbose=args.verbose)
+#     args = parser.parse_args()
 
-if __name__ == '__main__':
-    run()
+#     build_statistics_database(args.depth, csv_export=args.csv, verbose=args.verbose)
+
+# if __name__ == '__main__':
+#     run()
 
