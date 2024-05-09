@@ -1,14 +1,13 @@
 import os
-import argparse
+# import argparse
 from itertools import product
 
 import numpy as np
 import pandas as pd
 
 # Conventions:
-# 1) A 'sequence' is a binary string that represents a sequence of coin flips. 
-# 2) The variable 'N' reprents the length of the sequences under consideration.
-# 3) 
+# - A 'sequence' is a binary string that represents a sequence of coin flips. 
+# - The variable 'N' reprents the length of the sequences under consideration. 
 
 
 def get_run_counts(sequence):
@@ -80,35 +79,7 @@ def build_expectations_df(observations_df):
     return expectations_df
 
 
-def build_statistics_df_v1(observations_df, expectations_df):
-    # Extract expected counts from the expectations_df
-    expected_counts = expectations_df.iloc[0, 1:].values.astype(float)
-
-    # Prepare to store 𝜒^2 values
-    chi_squared_results = []
-
-    # Iterate over each row in observations_df to calculate 𝜒^2 values
-    for index, row in observations_df.iterrows():
-        observed_counts = row[1:].values.astype(float)
-        # Calculate the 𝜒^2 statistic
-        chi_squared = np.sum((observed_counts - expected_counts)**2 / expected_counts)
-        chi_squared_results.append((row['key'], chi_squared))
-
-    # Create a DataFrame from the results
-    statistics_df = pd.DataFrame(chi_squared_results,
-                                 columns=['key', 'chi_squared'])
-
-    # Calculate p-values as the proportion of all 𝜒^2 values 
-    # that are <= each observed 𝜒^2 value
-    all_chi_squared_values = statistics_df['chi_squared'].values
-    statistics_df['p_value'] = [
-        np.mean(all_chi_squared_values >= x) for x in all_chi_squared_values
-    ]
-
-    return statistics_df
-
-
-def build_statistics_df_v2(observations_df, expectations_df):
+def build_statistics_df(observations_df, expectations_df):
     # Extract expected counts from the expectations_df
     expected_counts = expectations_df.iloc[0, 1:].values.astype(float)
 
@@ -198,7 +169,7 @@ def build_statistics_database(lower, upper,
                 print(f"\tExpectations DataFrame for {n}-strings built and saved.")
 
             # Build the statistics DataFrame
-            statistics_df = build_statistics_df_v1(observations_df, expectations_df)
+            statistics_df = build_statistics_df(observations_df, expectations_df)
             store.put(statistics_key, statistics_df, format='table', data_columns=True)
             if verbose:
                 print(f"\tStatistics DataFrame for {n}-strings built and saved.\n")
@@ -226,12 +197,6 @@ def get_p_value_for_sequence(sequence, file_path='data/statistics_database.h5'):
         else:
             return "No data available for strings of this length."
 
-# Example usage:
-# build_statistics_database(1,10,
-#                            filename='test_statistics_database.h5',
-#                            store_observations=True,
-#                            store_expectations=True,
-#                            verbose=True)
 
 # def run():
 #     parser = argparse.ArgumentParser(description='Build a statistics database for binary strings.')
@@ -246,4 +211,4 @@ def get_p_value_for_sequence(sequence, file_path='data/statistics_database.h5'):
 # if __name__ == '__main__':
 #     run()
 
-print("Builder ready.")
+print("Builder ready...\n")
