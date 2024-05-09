@@ -34,7 +34,7 @@ def get_run_counts(sequence):
     return counts
 
 
-def build_observations_df(N, COMP_LIMIT=20):
+def build_observations_df(N, COMP_LIMIT=17):
     # Check if N exceeds the computational limit to decide on the generation method
     if N > COMP_LIMIT:
         # Use random sampling for large N

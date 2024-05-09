@@ -1,9 +1,9 @@
 import sleuthbuilder as sb
 
-sb.build_statistics_database(1, 32,
+sb.build_statistics_database(1, 20,
                             filename='statistics_database.h5',
-                            store_observations=False,
-                            store_expectations=False,
+                            store_observations=True,
+                            store_expectations=True,
                             verbose=True)
 
 # # Prompt the user for a binary string
