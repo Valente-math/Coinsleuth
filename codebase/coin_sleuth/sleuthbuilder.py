@@ -34,7 +34,17 @@ def get_run_counts(sequence):
     return counts
 
 
-def build_observations_df(N, COMP_LIMIT=17):
+def get_chi_squared(observed, expected, verbose=False):
+    components = (observed - expected)**2 / expected
+    chi_squared = np.sum(components)
+    if verbose:
+        print(f'Observed:\n{observed}\n')
+        print(f'Expected:\n{expected}\n')
+        print(f'Components:\n{components}\n-> {chi_squared}')
+    return chi_squared
+
+
+def build_observations_df(N, COMP_LIMIT=10):
     # Check if N exceeds the computational limit to decide on the generation method
     if N > COMP_LIMIT:
         # Use random sampling for large N
@@ -90,7 +100,7 @@ def build_statistics_df(observations_df, expectations_df):
     for index, row in observations_df.iterrows():
         observed_counts = row[1:].values.astype(float)
         # Calculate the chi-squared statistic
-        chi_squared = np.sum((observed_counts - expected_counts)**2 / expected_counts)
+        chi_squared = get_chi_squared(observed_counts, expected_counts)
         chi_squared_results.append((row['key'], chi_squared))
 
     # Create a DataFrame from the results
@@ -122,7 +132,8 @@ def build_statistics_database(lower, upper,
                               filename='statistics_database.h5',
                               store_observations=False,
                               store_expectations=False,
-                              verbose=False):
+                              verbose=False,
+                              COMP_LIMIT=10):
     # Define the path to the HDF5 file within the 'data' folder
     folder_path = 'data'
     file_path = os.path.join(folder_path, filename)
@@ -151,7 +162,7 @@ def build_statistics_database(lower, upper,
                 print(f"Building and storing statistics for {n}-strings...")
 
             # Build the observations DataFrame
-            observations_df = build_observations_df(n)
+            observations_df = build_observations_df(n, COMP_LIMIT)
             if store_observations:
                 observations_key = get_key(n, 'observations')
                 if observations_key not in existing_keys:
