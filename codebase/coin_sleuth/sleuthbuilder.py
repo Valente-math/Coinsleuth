@@ -1,13 +1,17 @@
 import os
-# import argparse
 from itertools import product
 
 import numpy as np
 import pandas as pd
 
 # Conventions:
-# - A 'sequence' is a binary string that represents a sequence of coin flips. 
-# - The variable 'N' reprents the length of the sequences under consideration. 
+# - A 'sequence' is a binary string that represents a sequence of coin flips.
+# - The variable 'N' reprents the length of the sequences under consideration.
+
+COMP_LIMIT = 10
+def set_comp_limit(depth):
+    global COMP_LIMIT
+    COMP_LIMIT = depth
 
 
 def get_run_counts(sequence):
@@ -44,7 +48,7 @@ def get_chi_squared(observed, expected, verbose=False):
     return chi_squared
 
 
-def build_observations_df(N, COMP_LIMIT=10):
+def build_observations_df(N):
     # Check if N exceeds the computational limit to decide on the generation method
     if N > COMP_LIMIT:
         # Use random sampling for large N
@@ -128,12 +132,14 @@ def build_statistics_df(observations_df, expectations_df):
     return statistics_df
 
 
+################################ BEGIN USER-FACING METHODS ################################
+
+
 def build_statistics_database(lower, upper,
                               filename='statistics_database.h5',
                               store_observations=False,
-                              store_expectations=False,
-                              verbose=False,
-                              COMP_LIMIT=10):
+                              store_expectations=True,
+                              verbose=False):
     # Define the path to the HDF5 file within the 'data' folder
     folder_path = 'data'
     file_path = os.path.join(folder_path, filename)
@@ -162,7 +168,7 @@ def build_statistics_database(lower, upper,
                 print(f"Building and storing statistics for {n}-strings...")
 
             # Build the observations DataFrame
-            observations_df = build_observations_df(n, COMP_LIMIT)
+            observations_df = build_observations_df(n)
             if store_observations:
                 observations_key = get_key(n, 'observations')
                 if observations_key not in existing_keys:
@@ -189,37 +195,72 @@ def build_statistics_database(lower, upper,
     print("Statistics database build complete!")
 
 
-def get_p_value_for_sequence(sequence, file_path='data/statistics_database.h5'):
-    
-    # Determine the length of the binary string to find the corresponding dataset
-    length = len(sequence)
-    key = f'/statistics/length_{length}'
+def get_statistics_for_sequence(sequence, db_file_path='data/statistics_database.h5', verbose=False):
+    N = len(sequence)
+    id = f'length_{N}'
+    statistics_key = f'/statistics/{id}'
+    expectations_key = f'/expectations/{id}'
 
-    # Open the HDF5 file and read the specific dataset
-    with pd.HDFStore(file_path, 'r') as store:
-        if key in store:
-            df = store[key]
-            # Check if the binary string is in the DataFrame
-            result = df[df['key'] == sequence]
-            if not result.empty:
-                return result['p_value'].values[0]
-            else:
-                return "String not found in the database."
+    with pd.HDFStore(db_file_path, 'a') as store:  # 'a' to allow data addition if necessary
+        # Check and load expectations data
+        if expectations_key in store:
+            if verbose:
+                print(f"Found expected counts for {id}.")
+            expectations_df = store[expectations_key]
         else:
-            return "No data available for strings of this length."
+            # Prompt for generating expectations data
+            if verbose:
+                print(f"Expectations data for {id} not found. Generating now...")
+            observations_df = build_observations_df(N)
+            expectations_df = build_expectations_df(observations_df)
+            if input("Save new expectations data to database? (y/n): ") == 'y':
+                store.put(expectations_key, expectations_df, format='table', data_columns=True)
 
+        # Compute chi-squared statistic
+        observed = get_run_counts(sequence)
+        expected = expectations_df.iloc[0, 1:].values.astype(float)
+        chi_squared = get_chi_squared(observed, expected)
 
-# def run():
-#     parser = argparse.ArgumentParser(description='Build a statistics database for binary strings.')
-#     parser.add_argument('depth', type=int, help='The depth of statistics to build.')
-#     parser.add_argument('--csv', action='store_true', help='Enable CSV export.')
-#     parser.add_argument('--verbose', action='store_true', help='Enable verbose output.')
+        # Check and load statistics data
+        if statistics_key in store:
+            if verbose:
+                print(f"Found statistics for {id}.")
+            statistics_df = store[statistics_key]
+        else:
+            # Prompt for generating statistics data
+            if verbose:
+                print(f"Statistics data for {id} not found. Generating now...")
+            observations_df = build_observations_df(N)
+            statistics_df = build_statistics_df(observations_df, expectations_df)
+            if input("Save new statistics data to database? (y/n): ") == 'y':
+                store.put(statistics_key, statistics_df, format='table', data_columns=True)
 
-#     args = parser.parse_args()
+        # Find p-value or range
+        p_value = statistics_df['p_value'][statistics_df['chi_squared'] == chi_squared]
+        if verbose:
+            print(f"Search results for p-value:\n{p_value}")
 
-#     build_statistics_database(args.depth, csv_export=args.csv, verbose=args.verbose)
+        if p_value.empty:
+            lower_p_value = statistics_df['p_value'][statistics_df['chi_squared'] > chi_squared]  
+            if verbose:
+                print(f"Search results for lower p-value:\n{lower_p_value}")
 
-# if __name__ == '__main__':
-#     run()
+            upper_p_value = statistics_df['p_value'][statistics_df['chi_squared'] < chi_squared]  
+            if verbose:
+                print(f"Search results for upper p-value:\n{upper_p_value}")
+
+            if lower_p_value.empty:
+                if upper_p_value.empty:
+                    return f"Chi-squared: {chi_squared}, p-value not determined."
+                else:
+                    return f"Chi-squared: {chi_squared}, p < {upper_p_value.min()}."
+            else:
+                if upper_p_value.empty:
+                    return f"Chi-squared: {chi_squared}, p > {lower_p_value.max()}."
+                else:
+                    return f"Chi-squared: {chi_squared}, {lower_p_value.max()} < p < {upper_p_value.min()}"
+        else:
+            return f"Chi-squared: {chi_squared}, p = {p_value.iloc[0]}."
+
 
 print("Builder ready...\n")
