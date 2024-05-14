@@ -23,7 +23,7 @@ def run():
 
     if args.limit is not None:
         sb.set_comp_limit(args.limit)
-        print(f"Computation limit set to {args.complimit}")
+        print(f"Computation limit set to {args.limit}")
 
     if args.db is not None:
         sb.set_db_file_name(args.db)
@@ -35,3 +35,7 @@ def run():
 
 if __name__ == '__main__':
     run()
+
+
+# Example usage:
+# poetry run python cli.py --verbose --limit 10 --db test_database.h5  build 1 12
