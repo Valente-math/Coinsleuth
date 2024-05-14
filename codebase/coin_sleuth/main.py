@@ -1,14 +1,24 @@
 import sleuthbuilder as sb
 # import argparse
 
-COMP_LIMIT = 10
+# Set database parameters
+comp_limit = 10
 lower = 1
-upper = 15
+upper = 20
 
-sb.set_comp_limit(COMP_LIMIT)
-sb.build_statistics_database(lower, upper,
-                            filename=f'statistics_database_({lower},{upper})_{COMP_LIMIT}.h5',
-                            verbose=True)
+sb.set_comp_limit(comp_limit)
+
+# Set database path
+db_folder_path = 'data'
+db_file_name =f'statistics_database_({lower},{upper})_{comp_limit}.h5'
+# db_file_name = 'test_database.h5'
+sb.set_db_path(db_folder_path, db_file_name)
+
+# Build database
+sb.build_statistics_database(lower, upper, 
+                             store_observations=False, 
+                             store_expectations=True,
+                             verbose=False)
 
 
 # # Prompt the user for a binary string
@@ -20,7 +30,6 @@ sb.build_statistics_database(lower, upper,
 #     print("P-value:", p_value)
 # else:
 #     print("Invalid input. Please make sure to enter a binary string containing only 0s and 1s.")
-
 
 
 # def run():

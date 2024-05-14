@@ -4,14 +4,35 @@ from itertools import product
 import numpy as np
 import pandas as pd
 
-# Conventions:
+######################################## CONVENTIONS ########################################
+
 # - A 'sequence' is a binary string that represents a sequence of coin flips.
 # - The variable 'N' reprents the length of the sequences under consideration.
+# - Sequences of length N are denoted 'length_N' in the database.
+# - The number of runs of length L in a sequence is denoted 'runs_L' in the database.
+
+######################################## GLOBALS ########################################
 
 COMP_LIMIT = 10
 def set_comp_limit(depth):
     global COMP_LIMIT
     COMP_LIMIT = depth
+
+DB_FOLDER_PATH = 'data'
+DB_FILE_NAME = 'statistics_database.h5'
+def set_db_path(folder_path, file_name):
+    global DB_FOLDER_PATH, DB_FILE_NAME
+    DB_FOLDER_PATH = folder_path
+    DB_FILE_NAME = file_name
+
+def get_db_path():
+    # Ensure the folder_path directory exists
+    os.makedirs(DB_FOLDER_PATH, exist_ok=True)
+
+    return os.path.join(DB_FOLDER_PATH, DB_FILE_NAME)
+
+
+######################################## BUILDER METHODS ########################################
 
 
 def get_run_counts(sequence):
@@ -36,16 +57,6 @@ def get_run_counts(sequence):
         counts[current_run_length - 1] += 1
 
     return counts
-
-
-def get_chi_squared(observed, expected, verbose=False):
-    components = (observed - expected)**2 / expected
-    chi_squared = np.sum(components)
-    if verbose:
-        print(f'Observed:\n{observed}\n')
-        print(f'Expected:\n{expected}\n')
-        print(f'Components:\n{components}\n-> {chi_squared}')
-    return chi_squared
 
 
 def build_observations_df(N):
@@ -74,28 +85,50 @@ def build_expectations_df(observations_df):
     # Extract sequence length N
     N = len(observations_df.iloc[0]['key'])
 
-    # Expected run count floor value:
-    # This would only be used if N > COMP_LIMIT and observations are sampled
-    MIN_EXPECTATION = (0.5)**(N)
+    # Expected run count floor value for sampled observations:
+    MIN_EXPECTATION = (0.5)**N if N > COMP_LIMIT else 0
 
-    # Calculate the expected counts for each run length up to 'max_length'
-    expected_counts = []
-    for run_length in range(1, N + 1):
-        # Calculate the mean count for the current run length
-        mean_count = max(observations_df[f'runs_{run_length}'].mean(), MIN_EXPECTATION)
-        expected_counts.append(mean_count)
+    # Lists to store mean and standard deviation values
+    means = []
+    std_devs = []
+    run_lengths = range(1, N + 1)
 
-    # Create a new DataFrame for the expectation data
-    # (there will be only one row in this DataFrame)
-    columns = ['length'] + [f'exp_runs_{i+1}' for i in range(N)]
-    expectations_df = pd.DataFrame([[N] + expected_counts], columns=columns)
+    for length in run_lengths:
+        # Extract run counts for the current run length
+        run_counts = observations_df[f'runs_{length}']
+
+        # Calculate and enforce minimum expectation on the mean count
+        mean = max(run_counts.mean(), MIN_EXPECTATION)
+        std = run_counts.std()
+
+        # Append results
+        means.append(mean)
+        std_devs.append(std)
+
+    # Create a DataFrame
+    data = {
+        'run_length': run_lengths,
+        'mean': means,
+        'std': std_devs
+    }
+    expectations_df = pd.DataFrame(data)
 
     return expectations_df
 
 
+def get_chi_squared(observed, expected, verbose=False):
+    components = (observed - expected)**2 / expected
+    chi_squared = np.sum(components)
+    if verbose:
+        print(f'Observed:\n{observed}\n')
+        print(f'Expected:\n{expected}\n')
+        print(f'Components:\n{components}\n-> {chi_squared}')
+    return chi_squared
+
+
 def build_statistics_df(observations_df, expectations_df):
     # Extract expected counts from the expectations_df
-    expected_counts = expectations_df.iloc[0, 1:].values.astype(float)
+    expected_counts = expectations_df['mean'].values.astype(float)
 
     # Prepare to store chi-squared values
     chi_squared_results = []
@@ -114,42 +147,34 @@ def build_statistics_df(observations_df, expectations_df):
     statistics_df.sort_values('chi_squared', ascending=False, inplace=True)
     statistics_df.reset_index(drop=True, inplace=True)
 
-    # Calculate p-values using the method described
-    p_values = np.zeros(len(statistics_df))
-    j = 0  # Flag to mark the start of a new block of distinct chi-squared values
-    total = len(statistics_df)  # Total number of observations
+    # Total number of observations
+    total = len(statistics_df) 
+
+    # Initialize p-values to 0
+    p_values = np.zeros(total)
+
+    # Helper function for locating chi-squared values
+    def chi_squared_at(index):
+        return statistics_df.loc[index, 'chi_squared']
 
     # Iterate over the sorted DataFrame
-    for i in range(total):
-        if i == total - 1 or statistics_df.loc[i, 'chi_squared'] > statistics_df.loc[i + 1, 'chi_squared']:
+    block_start_index  = 0  # Flag to mark the start of a new block of distinct chi-squared values
+    for current_index in range(total):
+        next_index = current_index + 1
+        if next_index == total or chi_squared_at(current_index) > chi_squared_at(next_index):
             # Calculate p-value for the block
-            p_value = (i + 1) / total
-            p_values[j:i+1] = p_value
-            j = i + 1  # Move the start of the next block to the next element
+            p_value = (next_index) / total
+            p_values[block_start_index : next_index] = p_value
+            block_start_index  = next_index  # Move the start of the next block to the next element
 
     statistics_df['p_value'] = p_values
 
     return statistics_df
 
 
-################################ BEGIN USER-FACING METHODS ################################
-
-
-def build_statistics_database(lower, upper,
-                              filename='statistics_database.h5',
-                              store_observations=False,
-                              store_expectations=True,
-                              verbose=False):
-    # Define the path to the HDF5 file within the 'data' folder
-    folder_path = 'data'
-    file_path = os.path.join(folder_path, filename)
-
-    # Ensure the 'data' directory exists
-    os.makedirs(folder_path, exist_ok=True)
-
-    # Initialize or open the HDF5 file
-    with pd.HDFStore(file_path, 'a') as store:  # 'a' for read/write if it exists, create otherwise
-
+def build_statistics_database(lower, upper, store_observations=False, store_expectations=True, verbose=False):
+    # Initialize or open the HDF5 databse
+    with pd.HDFStore(get_db_path(), 'a') as store:  # 'a' for read/write if it exists, create otherwise
         # Determine which dataframes already exist
         existing_keys = set(store.keys())
 
@@ -195,13 +220,17 @@ def build_statistics_database(lower, upper,
     print("Statistics database build complete!")
 
 
-def get_statistics_for_sequence(sequence, db_file_path='data/statistics_database.h5', verbose=False):
+######################################## USER-FACING METHODS ########################################
+
+
+def get_statistics_for_sequence(sequence, verbose=False):
     N = len(sequence)
     id = f'length_{N}'
     statistics_key = f'/statistics/{id}'
     expectations_key = f'/expectations/{id}'
 
-    with pd.HDFStore(db_file_path, 'a') as store:  # 'a' to allow data addition if necessary
+    # Initialize or open the HDF5 databse
+    with pd.HDFStore(get_db_path(), 'a') as store:  # 'a' to allow data addition if necessary
         # Check and load expectations data
         if expectations_key in store:
             if verbose:
@@ -218,7 +247,7 @@ def get_statistics_for_sequence(sequence, db_file_path='data/statistics_database
 
         # Compute chi-squared statistic
         observed = get_run_counts(sequence)
-        expected = expectations_df.iloc[0, 1:].values.astype(float)
+        expected = expectations_df['mean'].values.astype(float)
         chi_squared = get_chi_squared(observed, expected)
 
         # Check and load statistics data
