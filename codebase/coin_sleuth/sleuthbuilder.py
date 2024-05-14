@@ -223,7 +223,7 @@ def build_statistics_database(lower, upper, store_observations=False, store_expe
 ######################################## USER-FACING METHODS ########################################
 
 
-def get_statistics_for_sequence(sequence, verbose=False):
+def get_statistics_for_sequence(sequence, save_new_data=False, verbose=False):
     N = len(sequence)
     id = f'length_{N}'
     statistics_key = f'/statistics/{id}'
@@ -237,12 +237,11 @@ def get_statistics_for_sequence(sequence, verbose=False):
                 print(f"Found expected counts for {id}.")
             expectations_df = store[expectations_key]
         else:
-            # Prompt for generating expectations data
             if verbose:
                 print(f"Expectations data for {id} not found. Generating now...")
             observations_df = build_observations_df(N)
             expectations_df = build_expectations_df(observations_df)
-            if input("Save new expectations data to database? (y/n): ") == 'y':
+            if save_new_data:
                 store.put(expectations_key, expectations_df, format='table', data_columns=True)
 
         # Compute chi-squared statistic
@@ -256,40 +255,44 @@ def get_statistics_for_sequence(sequence, verbose=False):
                 print(f"Found statistics for {id}.")
             statistics_df = store[statistics_key]
         else:
-            # Prompt for generating statistics data
             if verbose:
                 print(f"Statistics data for {id} not found. Generating now...")
             observations_df = build_observations_df(N)
             statistics_df = build_statistics_df(observations_df, expectations_df)
-            if input("Save new statistics data to database? (y/n): ") == 'y':
+            if save_new_data:
                 store.put(statistics_key, statistics_df, format='table', data_columns=True)
 
-        # Find p-value or range
-        p_value = statistics_df['p_value'][statistics_df['chi_squared'] == chi_squared]
-        if verbose:
-            print(f"Search results for p-value:\n{p_value}")
+        # Find p-value range
+        lower_p_value = statistics_df['p_value'][statistics_df['chi_squared'] >= chi_squared]
+        upper_p_value = statistics_df['p_value'][statistics_df['chi_squared'] <= chi_squared]
+        p_value_range = (lower_p_value.max(), upper_p_value.min())
 
-        if p_value.empty:
-            lower_p_value = statistics_df['p_value'][statistics_df['chi_squared'] > chi_squared]  
-            if verbose:
-                print(f"Search results for lower p-value:\n{lower_p_value}")
+        return (chi_squared, p_value_range)
+        # p_value = statistics_df['p_value'][statistics_df['chi_squared'] == chi_squared]
+        # if verbose:
+        #     print(f"Search results for p-value:\n{p_value}")
 
-            upper_p_value = statistics_df['p_value'][statistics_df['chi_squared'] < chi_squared]  
-            if verbose:
-                print(f"Search results for upper p-value:\n{upper_p_value}")
+        # if p_value.empty:
+        #     lower_p_value = statistics_df['p_value'][statistics_df['chi_squared'] > chi_squared]  
+        #     if verbose:
+        #         print(f"Search results for lower p-value:\n{lower_p_value}")
 
-            if lower_p_value.empty:
-                if upper_p_value.empty:
-                    return f"Chi-squared: {chi_squared}, p-value not determined."
-                else:
-                    return f"Chi-squared: {chi_squared}, p < {upper_p_value.min()}."
-            else:
-                if upper_p_value.empty:
-                    return f"Chi-squared: {chi_squared}, p > {lower_p_value.max()}."
-                else:
-                    return f"Chi-squared: {chi_squared}, {lower_p_value.max()} < p < {upper_p_value.min()}"
-        else:
-            return f"Chi-squared: {chi_squared}, p = {p_value.iloc[0]}."
+        #     upper_p_value = statistics_df['p_value'][statistics_df['chi_squared'] < chi_squared]  
+        #     if verbose:
+        #         print(f"Search results for upper p-value:\n{upper_p_value}")
+
+        #     if lower_p_value.empty:
+        #         if upper_p_value.empty:
+        #             return f"Chi-squared: {chi_squared}, p-value not determined."
+        #         else:
+        #             return f"Chi-squared: {chi_squared}, p < {upper_p_value.min()}."
+        #     else:
+        #         if upper_p_value.empty:
+        #             return f"Chi-squared: {chi_squared}, p > {lower_p_value.max()}."
+        #         else:
+        #             return f"Chi-squared: {chi_squared}, {lower_p_value.max()} < p < {upper_p_value.min()}"
+        # else:
+        #     return f"Chi-squared: {chi_squared}, p = {p_value.iloc[0]}."
 
 
 print("Builder ready...\n")
