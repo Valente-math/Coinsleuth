@@ -14,22 +14,19 @@ import pandas as pd
 ######################################## GLOBALS ########################################
 
 COMP_LIMIT = 10
-def set_comp_limit(depth):
+def set_comp_limit(comp_limit):
     global COMP_LIMIT
-    COMP_LIMIT = depth
+    COMP_LIMIT = comp_limit
 
 DB_FOLDER_PATH = 'data'
-DB_FILE_NAME = 'statistics_database.h5'
-def set_db_path(folder_path, file_name):
-    global DB_FOLDER_PATH, DB_FILE_NAME
+def set_db__folder_path(folder_path):
+    global DB_FOLDER_PATH
     DB_FOLDER_PATH = folder_path
+
+DB_FILE_NAME = 'statistics_database.h5'
+def set_db_file_name(file_name):
+    global DB_FILE_NAME
     DB_FILE_NAME = file_name
-
-def get_db_path():
-    # Ensure the folder_path directory exists
-    os.makedirs(DB_FOLDER_PATH, exist_ok=True)
-
-    return os.path.join(DB_FOLDER_PATH, DB_FILE_NAME)
 
 
 ######################################## BUILDER METHODS ########################################
@@ -116,7 +113,8 @@ def build_expectations_df(observations_df):
     return expectations_df
 
 
-def get_chi_squared(observed, expected, verbose=False):
+def get_chi_squared(observed, expected, 
+                    verbose=False):
     components = (observed - expected)**2 / expected
     chi_squared = np.sum(components)
     if verbose:
@@ -172,7 +170,17 @@ def build_statistics_df(observations_df, expectations_df):
     return statistics_df
 
 
-def build_statistics_database(lower, upper, store_observations=False, store_expectations=True, verbose=False):
+def get_db_path():
+    # Ensure the folder_path directory exists
+    os.makedirs(DB_FOLDER_PATH, exist_ok=True)
+    # Returned the full database path
+    return os.path.join(DB_FOLDER_PATH, DB_FILE_NAME)
+
+
+def build_statistics_database(lower_bound, upper_bound, 
+                              store_observations=False, 
+                              store_expectations=True, 
+                              verbose=False):
     # Initialize or open the HDF5 databse
     with pd.HDFStore(get_db_path(), 'a') as store:  # 'a' for read/write if it exists, create otherwise
         # Determine which dataframes already exist
@@ -182,13 +190,15 @@ def build_statistics_database(lower, upper, store_observations=False, store_expe
             return f'/{df_name}/length_{n}'
 
         # Build and add the DataFrames
-        for n in range(lower, upper + 1):
+        for n in range(lower_bound, upper_bound + 1):
             statistics_key = get_key(n, 'statistics')
 
             # Check if statistics have already been computed
             if statistics_key in existing_keys:
-                print(f'Found key: {statistics_key}')
+                if verbose:
+                    print(f'Found key: {statistics_key}')
                 continue
+
             if verbose:
                 print(f"Building and storing statistics for {n}-strings...")
 
@@ -220,10 +230,9 @@ def build_statistics_database(lower, upper, store_observations=False, store_expe
     print("Statistics database build complete!")
 
 
-######################################## USER-FACING METHODS ########################################
-
-
-def get_statistics_for_sequence(sequence, save_new_data=False, verbose=False):
+def get_statistics(sequence, 
+                   save_new_data=False, 
+                   verbose=False):
     N = len(sequence)
     id = f'length_{N}'
     statistics_key = f'/statistics/{id}'
@@ -263,11 +272,11 @@ def get_statistics_for_sequence(sequence, save_new_data=False, verbose=False):
                 store.put(statistics_key, statistics_df, format='table', data_columns=True)
 
         # Find p-value range
-        lower_p_value = statistics_df['p_value'][statistics_df['chi_squared'] >= chi_squared]
-        upper_p_value = statistics_df['p_value'][statistics_df['chi_squared'] <= chi_squared]
-        p_value_range = (lower_p_value.max(), upper_p_value.min())
+        lower_p_values = statistics_df['p_value'][statistics_df['chi_squared'] >= chi_squared]
+        upper_p_values = statistics_df['p_value'][statistics_df['chi_squared'] <= chi_squared]
+        p_value_range = (lower_p_values.max(), upper_p_values.min())
 
-        return (chi_squared, p_value_range)
+        return {"chi_squared" : chi_squared, "p_value_range" : p_value_range}
         # p_value = statistics_df['p_value'][statistics_df['chi_squared'] == chi_squared]
         # if verbose:
         #     print(f"Search results for p-value:\n{p_value}")
