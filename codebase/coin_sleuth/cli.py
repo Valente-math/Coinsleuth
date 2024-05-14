@@ -38,4 +38,4 @@ if __name__ == '__main__':
 
 
 # Example usage:
-# poetry run python cli.py --verbose --limit 10 --db test_database.h5  build 1 12
+# python cli.py --verbose --limit 10 --db test_database.h5  build 1 12
