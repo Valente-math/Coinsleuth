@@ -217,7 +217,7 @@ def build_database(lower_bound, upper_bound,
                     if store_observations:
                         store.put(observations_key, observations_df, format='table', data_columns=True)
             if verbose and store_observations:
-                print(f"\tObservations for length_{n} {"found" if have_observations else "generated"}.")
+                print(f"\tObservations for length_{n} {'found' if have_observations else 'generated'}.")
 
             if need_expectations:
                 if have_expectations:
@@ -227,14 +227,14 @@ def build_database(lower_bound, upper_bound,
                     if store_expectations:
                         store.put(expectations_key, expectations_df, format='table', data_columns=True)
             if verbose and store_expectations:
-                print(f"\tExpectations for length_{n} {"found" if have_expectations else "generated"}.")
+                print(f"\tExpectations for length_{n} {'found' if have_expectations else 'generated'}.")
 
 
             if need_statistics:
                 statistics_df = build_statistics_df(observations_df, expectations_df)
                 store.put(statistics_key, statistics_df, format='table', data_columns=True)
             if verbose and store_statistics:
-                print(f"\tStatistics for length_{n} {"found" if have_statistics else "generated"}.")    
+                print(f"\tStatistics for length_{n} {'found' if have_statistics else 'generated'}.")    
 
 
     print("\nDatabase build complete!")
