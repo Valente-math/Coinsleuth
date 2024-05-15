@@ -177,57 +177,67 @@ def get_db_path():
     return os.path.join(DB_FOLDER_PATH, DB_FILE_NAME)
 
 
-def build_statistics_database(lower_bound, upper_bound, 
+def build_database(lower_bound, upper_bound, 
                               store_observations=False, 
-                              store_expectations=True, 
+                              store_expectations=False,
+                              store_statistics=False, 
                               verbose=False):
     # Initialize or open the HDF5 databse
     with pd.HDFStore(get_db_path(), 'a') as store:  # 'a' for read/write if it exists, create otherwise
         # Determine which dataframes already exist
         existing_keys = set(store.keys())
 
+        # Database key generation
         def get_key(n, df_name):
             return f'/{df_name}/length_{n}'
 
-        # Build and add the DataFrames
+        # Build and add the dataframes
         for n in range(lower_bound, upper_bound + 1):
-            statistics_key = get_key(n, 'statistics')
 
-            # Check if statistics have already been computed
-            if statistics_key in existing_keys:
-                if verbose:
-                    print(f'Found key: {statistics_key}')
-                continue
+            statistics_key   = get_key(n, 'statistics')
+            expectations_key = get_key(n, 'expectations')
+            observations_key = get_key(n, 'observations')
+
+            have_statistics   = statistics_key in existing_keys
+            have_expectations = expectations_key in existing_keys
+            have_observations = observations_key in existing_keys
+
+            need_statistics   = store_statistics and not have_statistics
+            need_expectations = (store_expectations and not have_expectations) or need_statistics
+            need_observations = (store_observations and not have_observations) or need_expectations or need_statistics 
 
             if verbose:
-                print(f"Building and storing statistics for {n}-strings...")
+                print(f"\nGetting DataFrames for length_{n}...")
 
-            # Build the observations DataFrame
-            observations_df = build_observations_df(n)
-            if store_observations:
-                observations_key = get_key(n, 'observations')
-                if observations_key not in existing_keys:
-                    store.put(observations_key, observations_df, format='table', data_columns=True)
-            if verbose:
-                print(f"\tObservations DataFrame for {n}-strings built and saved.")
+            if need_observations:
+                if have_observations:
+                    observations_df = store[observations_key]
+                else:
+                    observations_df = build_observations_df(n)
+                    if store_observations:
+                        store.put(observations_key, observations_df, format='table', data_columns=True)
+            if verbose and store_observations:
+                print(f"\tObservations for length_{n} {"found" if have_observations else "generated"}.")
 
-            # Build the expectations DataFrame
-            expectations_df = build_expectations_df(observations_df)
-            if store_expectations:
-                expectations_key = get_key(n, 'expectations')
-                if expectations_key not in existing_keys:
-                    store.put(expectations_key, expectations_df, format='table', data_columns=True)
-            if verbose:
-                print(f"\tExpectations DataFrame for {n}-strings built and saved.")
-
-            # Build the statistics DataFrame
-            statistics_df = build_statistics_df(observations_df, expectations_df)
-            store.put(statistics_key, statistics_df, format='table', data_columns=True)
-            if verbose:
-                print(f"\tStatistics DataFrame for {n}-strings built and saved.\n")
+            if need_expectations:
+                if have_expectations:
+                    expectations_df = store[expectations_key]
+                else:
+                    expectations_df = build_expectations_df(observations_df) 
+                    if store_expectations:
+                        store.put(expectations_key, expectations_df, format='table', data_columns=True)
+            if verbose and store_expectations:
+                print(f"\tExpectations for length_{n} {"found" if have_expectations else "generated"}.")
 
 
-    print("Statistics database build complete!")
+            if need_statistics:
+                statistics_df = build_statistics_df(observations_df, expectations_df)
+                store.put(statistics_key, statistics_df, format='table', data_columns=True)
+            if verbose and store_statistics:
+                print(f"\tStatistics for length_{n} {"found" if have_statistics else "generated"}.")    
+
+
+    print("\nDatabase build complete!")
 
 
 def get_statistics(sequence, 
@@ -277,31 +287,10 @@ def get_statistics(sequence,
         p_value_range = (lower_p_values.max(), upper_p_values.min())
 
         return {"chi_squared" : chi_squared, "p_value_range" : p_value_range}
-        # p_value = statistics_df['p_value'][statistics_df['chi_squared'] == chi_squared]
-        # if verbose:
-        #     print(f"Search results for p-value:\n{p_value}")
 
-        # if p_value.empty:
-        #     lower_p_value = statistics_df['p_value'][statistics_df['chi_squared'] > chi_squared]  
-        #     if verbose:
-        #         print(f"Search results for lower p-value:\n{lower_p_value}")
 
-        #     upper_p_value = statistics_df['p_value'][statistics_df['chi_squared'] < chi_squared]  
-        #     if verbose:
-        #         print(f"Search results for upper p-value:\n{upper_p_value}")
-
-        #     if lower_p_value.empty:
-        #         if upper_p_value.empty:
-        #             return f"Chi-squared: {chi_squared}, p-value not determined."
-        #         else:
-        #             return f"Chi-squared: {chi_squared}, p < {upper_p_value.min()}."
-        #     else:
-        #         if upper_p_value.empty:
-        #             return f"Chi-squared: {chi_squared}, p > {lower_p_value.max()}."
-        #         else:
-        #             return f"Chi-squared: {chi_squared}, {lower_p_value.max()} < p < {upper_p_value.min()}"
-        # else:
-        #     return f"Chi-squared: {chi_squared}, p = {p_value.iloc[0]}."
+# def build_sampling_database():
+#     return
 
 
 print("Builder ready...\n")
