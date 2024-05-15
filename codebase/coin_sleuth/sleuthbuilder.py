@@ -257,7 +257,7 @@ def get_statistics(sequence,
             expectations_df = store[expectations_key]
         else:
             if verbose:
-                print(f"Expectations data for {id} not found. Generating now...")
+                print(f"Expected counts for {id} not found. Generating now...")
             observations_df = build_observations_df(N)
             expectations_df = build_expectations_df(observations_df)
             if save_new_data:
@@ -275,7 +275,7 @@ def get_statistics(sequence,
             statistics_df = store[statistics_key]
         else:
             if verbose:
-                print(f"Statistics data for {id} not found. Generating now...")
+                print(f"Statistics for {id} not found. Generating now...")
             observations_df = build_observations_df(N)
             statistics_df = build_statistics_df(observations_df, expectations_df)
             if save_new_data:
