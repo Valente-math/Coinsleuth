@@ -55,14 +55,63 @@ def get_run_counts(sequence):
 
     return counts
 
-def get_expectations(N):
 
-    def c(n, N):
-        if n <  N: return 0
-        if n == N: return 1
-        if n >  N: return 0.25*(3 + N - n)
+def build_observations_df(N):
+    # Check if N exceeds the computational limit to decide on the generation method
+    if N > COMP_LIMIT:
+        # Use random sampling for large N
+        sequences = [''.join(np.random.choice(['0', '1'], N)) for _ in range(2**COMP_LIMIT)]
+    else:
+        # Generate all possible binary sequences for N <= 20
+        sequences = [''.join(seq) for seq in product('01', repeat=N)]
 
-    return [c(n, N)*(2**(1-n)) for n in range(1, N + 1)]
+    # Calculate run counts for each sequence
+    data = []
+    for seq in sequences:
+        run_counts = get_run_counts(seq)
+        data.append([seq] + run_counts)
+
+    # Create DataFrame
+    columns = ['key'] + [f'runs_{i+1}' for i in range(N)]
+    observations_df = pd.DataFrame(data, columns=columns)
+
+    return observations_df
+
+
+def build_expectations_df(observations_df):
+    # Extract sequence length N
+    N = len(observations_df.iloc[0]['key'])
+
+    # Expected run count floor value for sampled observations:
+    MIN_EXPECTATION = (0.5)**N if N > COMP_LIMIT else 0
+
+    # Lists to store mean and standard deviation values
+    means = []
+    std_devs = []
+    run_lengths = range(1, N + 1)
+
+    for length in run_lengths:
+        # Extract run counts for the current run length
+        run_counts = observations_df[f'runs_{length}']
+
+        # Calculate and enforce minimum expectation on the mean count
+        mean = max(run_counts.mean(), MIN_EXPECTATION)
+        std = run_counts.std()
+
+        # Append results
+        means.append(mean)
+        std_devs.append(std)
+
+    # Create a DataFrame
+    data = {
+        'run_length': run_lengths,
+        'mean': means,
+        'std': std_devs
+    }
+    expectations_df = pd.DataFrame(data)
+
+    return expectations_df
+
 
 def get_chi_squared(observed, expected, 
                     verbose=False):
@@ -75,29 +124,19 @@ def get_chi_squared(observed, expected,
     return chi_squared
 
 
-def build_statistics_df(N, record_observations=False):
+def build_statistics_df(observations_df, expectations_df):
     # Extract expected counts from the expectations_df
-    expected_counts = get_expectations(N)
-
-    if N > COMP_LIMIT:
-        # Use random sampling for large N
-        sequences = [''.join(np.random.choice(['0', '1'], N)) for _ in range(2**COMP_LIMIT)]
-    else:
-        # Generate all possible binary sequences for N <= 20
-        sequences = [''.join(seq) for seq in product('01', repeat=N)]
+    expected_counts = expectations_df['mean'].values.astype(float)
 
     # Prepare to store chi-squared values
-    observations = []
     chi_squared_results = []
 
-    # Calculate run counts for each sequence
-    for seq in sequences:
-        observed_counts = get_run_counts(seq)
+    # Iterate over each row in observations_df to calculate chi-squared values
+    for index, row in observations_df.iterrows():
+        observed_counts = row[1:].values.astype(float)
+        # Calculate the chi-squared statistic
         chi_squared = get_chi_squared(observed_counts, expected_counts)
-        chi_squared_results.append(chi_squared)  
-        if record_observations:
-            observations.append(observed_counts)  
-
+        chi_squared_results.append((row['key'], chi_squared))
 
     # Create a DataFrame from the results
     statistics_df = pd.DataFrame(chi_squared_results, columns=['key', 'chi_squared'])
@@ -139,7 +178,9 @@ def get_db_path():
 
 
 def build_database(lower_bound, upper_bound, 
-                              record_observations=False,
+                              store_observations=False, 
+                              store_expectations=False,
+                              store_statistics=False, 
                               verbose=False):
     # Initialize or open the HDF5 databse
     with pd.HDFStore(get_db_path(), 'a') as store:  # 'a' for read/write if it exists, create otherwise
