@@ -43,42 +43,75 @@ def get_run_counts(sequence):
 
     for i in range(1, N):
         if sequence[i] == current_char:
+            # Run continues
             current_run_length += 1
         else:
+            # Run ended
             if current_run_length <= N:
                 counts[current_run_length - 1] += 1
             current_run_length = 1
             current_char = sequence[i]
 
+    # Run ended by sequence termination
     if current_run_length <= N:
         counts[current_run_length - 1] += 1
 
-    return counts
+    return np.array(counts)
 
-def get_expectations(N):
 
+def get_run_partition(sequence):
+    if not sequence:
+        return []
+
+    N = len(sequence)
+    partition = []
+    current_run_length = 1
+    current_char = sequence[0]
+
+    for i in range(1, N):
+        if sequence[i] == current_char:
+            # Run continues
+            current_run_length += 1
+        else:
+            # Run ended by opposing flip
+            partition.append(current_run_length)
+            current_run_length = 1
+            current_char = sequence[i]
+
+    # Run ended by sequence termination
+    if current_run_length <= N:
+        partition.append(current_run_length)
+
+    return np.array(partition)
+
+
+def get_expected_counts(N):
+
+    # Define coefficient function
     def c(n, N):
-        if n <  N: return 0
+        if n >  N: return 0
         if n == N: return 1
-        if n >  N: return 0.25*(3 + N - n)
+        if n <  N: return 0.25*(3 + N - n)
 
-    return [c(n, N)*(2**(1-n)) for n in range(1, N + 1)]
+    expected_counts = [c(n, N)*(2**(1-n)) for n in range(1, N + 1)]
+
+    return np.array(expected_counts)
+
 
 def get_chi_squared(observed, expected, 
                     verbose=False):
-    components = (observed - expected)**2 / expected
-    chi_squared = np.sum(components)
     if verbose:
         print(f'Observed:\n{observed}\n')
         print(f'Expected:\n{expected}\n')
+    components = (observed - expected)**2 / expected
+    chi_squared = np.sum(components)
+    if verbose:
         print(f'Components:\n{components}\n-> {chi_squared}')
     return chi_squared
 
 
 def build_statistics_df(N, record_observations=False):
-    # Extract expected counts from the expectations_df
-    expected_counts = get_expectations(N)
-
+    # Check if N exceeds the computational limit to decide on the generation method
     if N > COMP_LIMIT:
         # Use random sampling for large N
         sequences = [''.join(np.random.choice(['0', '1'], N)) for _ in range(2**COMP_LIMIT)]
@@ -88,19 +121,28 @@ def build_statistics_df(N, record_observations=False):
 
     # Prepare to store chi-squared values
     observations = []
-    chi_squared_results = []
+    chi_squared_values = []
 
-    # Calculate run counts for each sequence
+    # Get expected counts
+    expected_counts = get_expected_counts(N)
+
+    # Calculate chi-squared for each sequence
     for seq in sequences:
-        observed_counts = get_run_counts(seq)
-        chi_squared = get_chi_squared(observed_counts, expected_counts)
-        chi_squared_results.append(chi_squared)  
+        run_counts = get_run_counts(seq)
+        chi_squared = get_chi_squared(run_counts, expected_counts)
+        chi_squared_values.append((seq, chi_squared))  
         if record_observations:
-            observations.append(observed_counts)  
-
+            run_partition = get_run_partition(seq)
+            observations.append((seq, run_counts, run_partition))
 
     # Create a DataFrame from the results
-    statistics_df = pd.DataFrame(chi_squared_results, columns=['key', 'chi_squared'])
+    statistics_df = pd.DataFrame(chi_squared_values, columns=['key', 'chi_squared'])
+
+    # Add observations to dataframe if requested
+    if record_observations:
+        observations_df = pd.DataFrame(observations, columns=['key', 'run_counts', 'run_partition'])
+        statistics_df = pd.merge(observations_df, statistics_df, on='key', how='left')
+
 
     # Sort the DataFrame by chi-squared values in descending order
     statistics_df.sort_values('chi_squared', ascending=False, inplace=True)
@@ -124,7 +166,33 @@ def build_statistics_df(N, record_observations=False):
             # Calculate p-value for the block
             p_value = (next_index) / total
             p_values[block_start_index : next_index] = p_value
+            
+            if record_observations:
+                # Check block for partition consistency
+                block_id = chi_squared_at(block_start_index)
+
+                inconsistent_partitions = []
+                current_partition = statistics_df.loc[block_start_index, 'run_partition']
+                for i in range(block_start_index + 1, next_index):
+
+                    next_partition = statistics_df.loc[i, 'run_partition']
+                    consistent = np.array_equal(np.sort(current_partition),
+                                                np.sort(next_partition))
+                    if not consistent:
+                        inconsistent_partitions.append((current_partition.tolist(),
+                                                         next_partition.tolist()))
+                    current_partition = statistics_df.loc[i, 'run_partition']
+                if len(inconsistent_partitions) > 0:
+                    print(f"Found inconsisent partitions in block {block_id}:")
+                    for partition in inconsistent_partitions:
+                        print(f"\t{partition}")
+                # else:
+                #     print(f"All partitions in block {block_id} consistent.")
+
+                
+
             block_start_index  = next_index  # Move the start of the next block to the next element
+
 
     statistics_df['p_value'] = p_values
 
@@ -138,62 +206,22 @@ def get_db_path():
     return os.path.join(DB_FOLDER_PATH, DB_FILE_NAME)
 
 
-def build_database(lower_bound, upper_bound, 
-                              record_observations=False,
-                              verbose=False):
+def build_database(lower_bound, upper_bound, record_observations=False, verbose=False):
     # Initialize or open the HDF5 databse
     with pd.HDFStore(get_db_path(), 'a') as store:  # 'a' for read/write if it exists, create otherwise
         # Determine which dataframes already exist
         existing_keys = set(store.keys())
 
-        # Database key generation
-        def get_key(n, df_name):
-            return f'/{df_name}/length_{n}'
-
         # Build and add the dataframes
-        for n in range(lower_bound, upper_bound + 1):
+        for N in range(lower_bound, upper_bound + 1):
+            key = f'statistics/length_{N}'
+            found_key = key in existing_keys
 
-            statistics_key   = get_key(n, 'statistics')
-            expectations_key = get_key(n, 'expectations')
-            observations_key = get_key(n, 'observations')
-
-            have_statistics   = statistics_key in existing_keys
-            have_expectations = expectations_key in existing_keys
-            have_observations = observations_key in existing_keys
-
-            need_statistics   = store_statistics and not have_statistics
-            need_expectations = (store_expectations and not have_expectations) or need_statistics
-            need_observations = (store_observations and not have_observations) or need_expectations or need_statistics 
-
+            if not found_key:
+                statistics_df = build_statistics_df(N, record_observations)
+                store.put(key, statistics_df, format='table', data_columns=True)
             if verbose:
-                print(f"\nGetting DataFrames for length_{n}...")
-
-            if need_observations:
-                if have_observations:
-                    observations_df = store[observations_key]
-                else:
-                    observations_df = build_observations_df(n)
-                    if store_observations:
-                        store.put(observations_key, observations_df, format='table', data_columns=True)
-            if verbose and store_observations:
-                print(f"\tObservations for length_{n} {'found' if have_observations else 'generated'}.")
-
-            if need_expectations:
-                if have_expectations:
-                    expectations_df = store[expectations_key]
-                else:
-                    expectations_df = build_expectations_df(observations_df) 
-                    if store_expectations:
-                        store.put(expectations_key, expectations_df, format='table', data_columns=True)
-            if verbose and store_expectations:
-                print(f"\tExpectations for length_{n} {'found' if have_expectations else 'generated'}.")
-
-
-            if need_statistics:
-                statistics_df = build_statistics_df(observations_df, expectations_df)
-                store.put(statistics_key, statistics_df, format='table', data_columns=True)
-            if verbose and store_statistics:
-                print(f"\tStatistics for length_{n} {'found' if have_statistics else 'generated'}.")    
+                print(f"\tStatistics for length_{N} {'found' if found_key else 'generated'}.")    
 
 
     print("\nDatabase build complete!")
