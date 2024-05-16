@@ -32,41 +32,12 @@ def set_db_file_name(file_name):
 ######################################## BUILDER METHODS ########################################
 
 
-def get_run_counts(sequence):
-    if not sequence:
-        return []
-
+def get_observations(sequence):
     N = len(sequence)
     counts = [0] * N
     current_run_length = 1
     current_char = sequence[0]
-
-    for i in range(1, N):
-        if sequence[i] == current_char:
-            # Run continues
-            current_run_length += 1
-        else:
-            # Run ended
-            if current_run_length <= N:
-                counts[current_run_length - 1] += 1
-            current_run_length = 1
-            current_char = sequence[i]
-
-    # Run ended by sequence termination
-    if current_run_length <= N:
-        counts[current_run_length - 1] += 1
-
-    return np.array(counts)
-
-
-def get_run_partition(sequence):
-    if not sequence:
-        return []
-
-    N = len(sequence)
     partition = []
-    current_run_length = 1
-    current_char = sequence[0]
 
     for i in range(1, N):
         if sequence[i] == current_char:
@@ -74,40 +45,101 @@ def get_run_partition(sequence):
             current_run_length += 1
         else:
             # Run ended by opposing flip
+            counts[current_run_length - 1] += 1
             partition.append(current_run_length)
+
+            # Reset run
             current_run_length = 1
             current_char = sequence[i]
 
     # Run ended by sequence termination
-    if current_run_length <= N:
-        partition.append(current_run_length)
+    counts[current_run_length - 1] += 1
+    partition.append(current_run_length)
 
-    return np.array(partition)
+    return np.array(counts), np.array(partition)
 
 
-def get_expected_counts(N):
-
+def get_expectations(N):
     # Define coefficient function
     def c(n, N):
-        if n >  N: return 0
-        if n == N: return 1
-        if n <  N: return 0.25*(3 + N - n)
+        if n >  N:
+            return 0
+        if n == N:
+            return 1
+        if n <  N:
+            return 0.25*(3 + N - n)
 
+    # Calculate expected counts
     expected_counts = [c(n, N)*(2**(1-n)) for n in range(1, N + 1)]
 
     return np.array(expected_counts)
 
 
-def get_chi_squared(observed, expected, 
-                    verbose=False):
-    if verbose:
-        print(f'Observed:\n{observed}\n')
-        print(f'Expected:\n{expected}\n')
+def get_chi_squared(observed, expected):
     components = (observed - expected)**2 / expected
     chi_squared = np.sum(components)
-    if verbose:
-        print(f'Components:\n{components}\n-> {chi_squared}')
     return chi_squared
+
+
+def remove_common_head_and_tail(tuple_set):
+    # Convert set to list to allow indexing
+    tuple_set = list(tuple_set)
+
+    # Find the common head length
+    min_length = min(len(t) for t in tuple_set)
+    common_head_length = 0
+    for i in range(min_length):
+        if all(t[i] == tuple_set[0][i] for t in tuple_set):
+            common_head_length += 1
+        else:
+            break
+
+    # Remove the common head
+    tuple_set = [t[common_head_length:] for t in tuple_set]
+
+    # Find the common tail length
+    min_length = min(len(t) for t in tuple_set)
+    common_tail_length = 0
+    for i in range(1, min_length + 1):
+        if all(t[-i] == tuple_set[0][-i] for t in tuple_set):
+            common_tail_length += 1
+        else:
+            break
+
+    # Remove the common tail
+    if common_tail_length > 0:
+        tuple_set = [t[:-common_tail_length] for t in tuple_set]
+
+    return tuple_set
+
+
+def analyze_block(statistics_df, block_start_index, block_end_index):
+    # Check block for partition consistency
+    block_id = statistics_df.loc[block_start_index, 'chi_squared']
+
+    inconsistent_partitions = []
+    current_partition = statistics_df.loc[block_start_index, 'partition']
+    
+    unique_partitions = {tuple(np.sort(current_partition))}
+    for i in range(block_start_index + 1, block_end_index):
+
+        next_partition = statistics_df.loc[i, 'partition']
+        unique_partitions.add(tuple(np.sort(next_partition)))
+
+        consistent = np.array_equal(np.sort(current_partition),
+                                    np.sort(next_partition))
+        if not consistent:
+            inconsistent_partitions.append((current_partition.tolist(),
+                                                next_partition.tolist()))
+        current_partition = statistics_df.loc[i, 'partition']
+
+
+    count_unique = len(unique_partitions)
+    if count_unique > 1:
+        print(f"Found {count_unique} unique partitions in block {block_id}:")
+        for partition in unique_partitions:
+            print(f"\t{partition}")
+        print(f"\tCore analysis: {remove_common_head_and_tail(unique_partitions)}")
 
 
 def build_statistics_df(N, record_observations=False):
@@ -124,25 +156,25 @@ def build_statistics_df(N, record_observations=False):
     chi_squared_values = []
 
     # Get expected counts
-    expected_counts = get_expected_counts(N)
+    expected_counts = get_expectations(N)
 
     # Calculate chi-squared for each sequence
     for seq in sequences:
-        run_counts = get_run_counts(seq)
-        chi_squared = get_chi_squared(run_counts, expected_counts)
+        # run_counts = get_run_counts(seq)
+        observed_counts, observed_partition = get_observations(seq)
+        chi_squared = get_chi_squared(observed_counts, expected_counts)
         chi_squared_values.append((seq, chi_squared))  
         if record_observations:
-            run_partition = get_run_partition(seq)
-            observations.append((seq, run_counts, run_partition))
+            # run_partition = get_run_partition(seq)
+            observations.append((seq, observed_counts, observed_partition))
 
     # Create a DataFrame from the results
     statistics_df = pd.DataFrame(chi_squared_values, columns=['key', 'chi_squared'])
 
     # Add observations to dataframe if requested
     if record_observations:
-        observations_df = pd.DataFrame(observations, columns=['key', 'run_counts', 'run_partition'])
+        observations_df = pd.DataFrame(observations, columns=['key', 'counts', 'partition'])
         statistics_df = pd.merge(observations_df, statistics_df, on='key', how='left')
-
 
     # Sort the DataFrame by chi-squared values in descending order
     statistics_df.sort_values('chi_squared', ascending=False, inplace=True)
@@ -163,35 +195,19 @@ def build_statistics_df(N, record_observations=False):
     for current_index in range(total):
         next_index = current_index + 1
         if next_index == total or chi_squared_at(current_index) > chi_squared_at(next_index):
-            # Calculate p-value for the block
-            p_value = (next_index) / total
-            p_values[block_start_index : next_index] = p_value
-            
+            # End of block
+            block_end_index = next_index
+
+            # Analyze partitions within block
             if record_observations:
-                # Check block for partition consistency
-                block_id = chi_squared_at(block_start_index)
+                analyze_block(statistics_df, block_start_index, block_end_index)
 
-                inconsistent_partitions = []
-                current_partition = statistics_df.loc[block_start_index, 'run_partition']
-                for i in range(block_start_index + 1, next_index):
+            # Calculate p-value for the block
+            p_value = (block_end_index) / total
+            p_values[block_start_index : block_end_index] = p_value
 
-                    next_partition = statistics_df.loc[i, 'run_partition']
-                    consistent = np.array_equal(np.sort(current_partition),
-                                                np.sort(next_partition))
-                    if not consistent:
-                        inconsistent_partitions.append((current_partition.tolist(),
-                                                         next_partition.tolist()))
-                    current_partition = statistics_df.loc[i, 'run_partition']
-                if len(inconsistent_partitions) > 0:
-                    print(f"Found inconsisent partitions in block {block_id}:")
-                    for partition in inconsistent_partitions:
-                        print(f"\t{partition}")
-                # else:
-                #     print(f"All partitions in block {block_id} consistent.")
-
-                
-
-            block_start_index  = next_index  # Move the start of the next block to the next element
+            # Move the start of the next block to the next element
+            block_start_index  = next_index  
 
 
     statistics_df['p_value'] = p_values
@@ -274,10 +290,6 @@ def get_statistics(sequence,
         p_value_range = (lower_p_values.max(), upper_p_values.min())
 
         return {"chi_squared" : chi_squared, "p_value_range" : p_value_range}
-
-
-# def build_sampling_database():
-#     return
 
 
 print("Builder ready...\n")
