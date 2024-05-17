@@ -135,7 +135,6 @@ def build_database(lower_bound, upper_bound):
             df = analyze_partitions(N)  # Analyze partitions for the current value of N
             store.put(key, df, format='table', data_columns=True)  # Store the DataFrame in the HDF5 database
 
-
 def get_statistics(sequence):
     N = len(sequence)
     partition = get_partition(sequence)
