@@ -289,8 +289,4 @@ def get_statistics(sequence,
         return {"chi_squared" : chi_squared, "p_value_range" : p_value_range}
 
 
-# def build_sampling_database():
-#     return
-
-
 print("Builder ready...\n")

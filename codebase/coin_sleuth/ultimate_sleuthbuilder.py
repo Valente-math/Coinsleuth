@@ -9,7 +9,7 @@ def set_db__folder_path(folder_path):
     global DB_FOLDER_PATH
     DB_FOLDER_PATH = folder_path
 
-DB_FILE_NAME = 'ultimate_statistics_database.h5'
+DB_FILE_NAME = 'ultimate_database.h5'
 def set_db_file_name(file_name):
     global DB_FILE_NAME
     DB_FILE_NAME = file_name
@@ -120,7 +120,7 @@ def get_db_path():
     return os.path.join(DB_FOLDER_PATH, DB_FILE_NAME)
 
 def get_db_key(N):
-    return f'/statistics/N_{N}'
+    return f'/N_{N}'
 
 def build_database(lower_bound, upper_bound):
     db_path = get_db_path()  # Get the path to the database
@@ -146,7 +146,8 @@ def get_statistics(sequence):
 
     key = get_db_key(N)
 
-    with pd.HDFStore(db_path, mode='r') as store:
+    with pd.HDFStore(db_path, mode='a') as store:
+        # print(f'Search for {key} in {store.keys()}')
         if key not in store.keys():
             print(f'Data for N = {N} not found. Generating and saving now...')
             build_database(N, N)
