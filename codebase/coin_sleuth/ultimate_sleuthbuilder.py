@@ -1,8 +1,7 @@
 import os
+import math
 import numpy as np
 import pandas as pd
-from math import factorial
-from collections import Counter
 
 DB_FOLDER_PATH = 'data'
 def set_db__folder_path(folder_path):
@@ -15,15 +14,14 @@ def set_db_file_name(file_name):
     DB_FILE_NAME = file_name
 
 
-def get_partition(sequence):
-    N = len(sequence)
-    counts = [0] * N
-    current_run_length = 1
-    current_char = sequence[0]
+def get_run_partition(seq):
+    N = len(seq)
     partition = []
+    current_run_length = 1
+    current_char = seq[0]
 
     for i in range(1, N):
-        if sequence[i] == current_char:
+        if seq[i] == current_char:
             # Run continues
             current_run_length += 1
         else:
@@ -32,12 +30,13 @@ def get_partition(sequence):
 
             # Reset run
             current_run_length = 1
-            current_char = sequence[i]
+            current_char = seq[i]
 
     # Run ended by sequence termination
     partition.append(current_run_length)
 
     return np.array(partition)
+
 
 def get_expectations(N):
     # Define coefficient function
@@ -53,9 +52,11 @@ def get_expectations(N):
     expected_counts = [c(n, N)*(2**(1-n)) for n in range(1, N + 1)]
     return np.array(expected_counts)
 
+
 def get_chi_squared(observed, expected):
     components = (observed - expected)**2 / expected
     return np.sum(components)
+
 
 def partitions(n):
     a = [0] * (n + 1)
@@ -81,15 +82,34 @@ def partitions(n):
         y = x + y - 1
         yield a[:k + 1]
 
-def calculate_multiplicity(partition):
-    counter = Counter(partition)
-    total_count = sum(counter.values())
-    multiplicity = factorial(total_count)
-    for count in counter.values():
-        multiplicity //= factorial(count)
-    return multiplicity * 2  # Multiply by 2 to account for symmetry
 
-def analyze_partitions(N):
+def calculate_multiplicity(partition):
+    # Count occurrences of each number in the partition using a simple dictionary
+    count_dict = {}
+    for num in partition:
+        if num in count_dict:
+            count_dict[num] += 1
+        else:
+            count_dict[num] = 1
+    
+    # Calculate the factorial of the length of the partition
+    total_length_factorial = math.factorial(len(partition))
+    
+    # Calculate the product of the factorials of the counts
+    denominator = 1
+    for count in count_dict.values():
+        denominator *= math.factorial(count)
+    
+    # Calculate multiplicity
+    multiplicity = total_length_factorial // denominator
+    
+    # Adjust for symmetry
+    multiplicity *= 2
+    
+    return multiplicity
+
+
+def build_statistics_df(N):
     expected_counts = get_expectations(N)
     data = []
 
@@ -104,14 +124,15 @@ def analyze_partitions(N):
         partition_str = ','.join(map(str, sorted(partition)))  # Convert partition to a sorted string for storage
         data.append((partition_str, chi_squared, multiplicity))
 
-    df = pd.DataFrame(data, columns=['partition', 'chi_squared', 'multiplicity'])
-    df.set_index('partition', inplace=True)  # Set partition as the index
-    df.sort_values(by='chi_squared', inplace=True)
+    statistics_df = pd.DataFrame(data, columns=['partition', 'chi_squared', 'multiplicity'])
+    statistics_df.set_index('partition', inplace=True)  # Set partition as the index
+    statistics_df.sort_values(by='chi_squared', inplace=True)
     
-    total_multiplicity = df['multiplicity'].sum()
-    df['p_value'] = df['multiplicity'][::-1].cumsum()[::-1] / total_multiplicity
+    total_multiplicity = statistics_df['multiplicity'].sum()
+    statistics_df['p_value'] = statistics_df['multiplicity'][::-1].cumsum()[::-1] / total_multiplicity
 
-    return df
+    return statistics_df
+
 
 def get_db_path():
     # Ensure the folder_path directory exists
@@ -119,42 +140,103 @@ def get_db_path():
     # Returned the full database path
     return os.path.join(DB_FOLDER_PATH, DB_FILE_NAME)
 
-def get_db_key(N):
-    return f'/N_{N}'
 
-def build_database(lower_bound, upper_bound):
+def get_db_key(name, N=None):
+    if N is None:
+        return f'/{name}'
+    else:
+        return f'/{name}/N_{N}'
+
+
+def record_data(store, key, data):
+    store.put(key, data, format='table', data_columns=True)
+
+
+def build_database(lower_bound, upper_bound, summarize=False):
     db_path = get_db_path()  # Get the path to the database
 
     with pd.HDFStore(db_path, mode='a') as store:  # Open the store in append mode
         for N in range(lower_bound, upper_bound + 1):
-            key = get_db_key(N)
+            key = get_db_key('statistics', N)
             if key in store.keys():  # Check if the key already exists in the database
                 print(f'Skipping N = {N}, already exists in the database.')
-                continue
-            print(f'Processing N = {N}...')
-            df = analyze_partitions(N)  # Analyze partitions for the current value of N
-            store.put(key, df, format='table', data_columns=True)  # Store the DataFrame in the HDF5 database
+            else:
+                print(f'Processing N = {N}...')
+                statistics_df = build_statistics_df(N)
+                record_data(store, key, statistics_df)
+        if summarize:
+            summary_data = summarize_database()
+            summary_key = get_db_key('summary')
+            record_data(store, summary_key, summary_data)
+    return
 
-def get_statistics(sequence):
-    N = len(sequence)
-    partition = get_partition(sequence)
+
+def summarize_database():
+    db_path = get_db_path()  # Get the path to the database
+    summary = []
+
+    with pd.HDFStore(db_path, mode='a') as store:  # Open the store in read mode
+        for key in store.keys():
+            N = int(key.split('_')[1])
+            statistics_df = store[key]
+            
+            # Extract chi-squared values and their multiplicities
+            chi_squared_values = statistics_df['chi_squared'].values
+            multiplicities = statistics_df['multiplicity'].values
+            
+            # Calculate the total multiplicity
+            total_multiplicity = np.sum(multiplicities)
+            
+            # Calculate the mean
+            mean_val = np.sum(chi_squared_values * multiplicities) / total_multiplicity
+            
+            # Calculate the mode
+            mode_index = np.argmax(multiplicities)
+            mode_val = chi_squared_values[mode_index]
+            
+            # Calculate the five-number summary
+            cumulative_multiplicities = np.cumsum(multiplicities)
+            min_val = chi_squared_values[0]
+            Q1 = chi_squared_values[np.searchsorted(cumulative_multiplicities,
+                                                     0.25 * total_multiplicity)]
+            Q2 = chi_squared_values[np.searchsorted(cumulative_multiplicities, 
+                                                    0.50 * total_multiplicity)]  # Median
+            Q3 = chi_squared_values[np.searchsorted(cumulative_multiplicities, 
+                                                    0.75 * total_multiplicity)]
+            max_val = chi_squared_values[-1]
+            
+            # Append the summary statistics for this N
+            summary.append([N, min_val, Q1, Q2, Q3, max_val, mean_val, mode_val])
+    
+        # Create a DataFrame from the summary
+        summary_df = pd.DataFrame(summary, columns=['N', 'min', 'Q1', 'Q2', 'Q3', 'max', 'mean', 'mode'])
+        
+        # Sort by N and set as the index
+        summary_df.sort_values(by='N', inplace=True)
+        summary_df.set_index('N', inplace=True)
+
+    return summary_df
+
+
+def analyze_sequence(seq):
+    N = len(seq)
+    partition = get_run_partition(seq)
     partition.sort()  # Sort the partition in ascending order
     partition_str = ','.join(map(str, partition))  # Convert partition to a string for comparison
 
     db_path = get_db_path()  # Get the path to the database
 
-    key = get_db_key(N)
+    key = get_db_key('statistics', N)
 
     with pd.HDFStore(db_path, mode='a') as store:
         # print(f'Search for {key} in {store.keys()}')
         if key not in store.keys():
             print(f'Data for N = {N} not found. Generating and saving now...')
             build_database(N, N)
-        df = store[key]
-        if partition_str in df.index:
-            p_value = df.loc[partition_str, 'p_value']
-            return p_value
-        else:
-            raise KeyError
+        statistics_df = store[key]
+
+    chi_squared = statistics_df.loc[partition_str, 'chi_squared']
+    p_value = statistics_df.loc[partition_str, 'p_value']
+    return {'N' : N, 'chi_squared' : chi_squared, 'p_value' : p_value}
             
 

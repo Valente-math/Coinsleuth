@@ -13,7 +13,7 @@ import pandas as pd
 
 ######################################## GLOBALS ########################################
 
-COMP_LIMIT = 10
+COMP_LIMIT = 15
 def set_comp_limit(comp_limit):
     global COMP_LIMIT
     COMP_LIMIT = comp_limit
@@ -23,7 +23,7 @@ def set_db__folder_path(folder_path):
     global DB_FOLDER_PATH
     DB_FOLDER_PATH = folder_path
 
-DB_FILE_NAME = 'statistics_database.h5'
+DB_FILE_NAME = 'empirical_database.h5'
 def set_db_file_name(file_name):
     global DB_FILE_NAME
     DB_FILE_NAME = file_name
@@ -240,7 +240,7 @@ def build_database(lower_bound, upper_bound,
     print("\nDatabase build complete!")
 
 
-def get_statistics(sequence, 
+def analyze_sequence(sequence, 
                    save_new_data=False, 
                    verbose=False):
     N = len(sequence)
@@ -288,5 +288,3 @@ def get_statistics(sequence,
 
         return {"chi_squared" : chi_squared, "p_value_range" : p_value_range}
 
-
-print("Builder ready...\n")
