@@ -4,7 +4,6 @@ import pandas as pd
 from math import factorial
 
 
-
 ### Globals
 
 DB_FOLDER_PATH = 'data'
