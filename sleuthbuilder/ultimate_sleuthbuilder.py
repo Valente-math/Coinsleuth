@@ -6,6 +6,11 @@ from math import factorial
 
 ### Globals
 
+USE_DB = True
+def set_use_db(use_db):
+    global USE_DB
+    USE_DB = use_db
+
 DB_FOLDER_PATH = 'data'
 def set_db__folder_path(folder_path):
     global DB_FOLDER_PATH
@@ -241,14 +246,8 @@ def get_sequence_partition(seq):
     return np.array(partition)
 
 
-def analyze_sequence(seq, use_database=True):
-    N = len(seq)
-    partition = get_sequence_partition(seq)
-    partition_id = get_partition_id(partition)
-    # partition.sort()  # Sort the partition in ascending order
-    # partition_id = ','.join(map(str, partition))  # Convert partition to a string for comparison
-
-    if use_database:
+def get_statistics(N):
+    if USE_DB:
         db_path = get_db_path()  # Get the path to the database
         db_key = get_db_key('statistics', N)
         with pd.HDFStore(db_path, mode='a') as store:
@@ -259,9 +258,43 @@ def analyze_sequence(seq, use_database=True):
             statistics_df = store[db_key]
     else:
         statistics_df = calculate_statistics(N)
+    return statistics_df
+
+
+def analyze_sequence(seq, statistics_df=None):
+    N = len(seq)
+    partition = get_sequence_partition(seq)
+    partition_id = get_partition_id(partition)
+
+    if statistics_df is None:
+        statistics_df = get_statistics(N)
 
     chi_squared = statistics_df.loc[partition_id, 'chi_squared']
     p_value = statistics_df.loc[partition_id, 'p_value']
-    return {'N' : N, 'chi_squared' : chi_squared, 'p_value' : p_value}
+    return {
+        'sequence' : seq,
+        'length' : N, 
+        'chi_squared' : chi_squared, 
+        'p_value' : p_value
+        }
             
+
+def analyze_sequence_set(sequences):
+    # Initialize statistics dictionary
+    lengths = {len(seq) for seq in sequences}
+    statistics = {N : get_statistics(N) for N in lengths}
+    
+    # Initialize results dataframe
+    results = []
+    
+    for seq in sequences: 
+        N = len(seq)
+        statistics_df = statistics[N]
+        sequence_stats = analyze_sequence(seq, statistics_df)
+        # Add sequence_stats as new row of results dataframe
+        results.append(sequence_stats)
+
+    # Return results as dataframe
+    return pd.DataFrame(results)
+    
 
