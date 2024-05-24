@@ -22,8 +22,9 @@ def set_db_file_name(file_name):
     DB_FILE_NAME = file_name
 
 CHI_SQUARED = 'chi_squared'
+LOG_CHI_SQUARED = 'log_chi_squared'
 P_VALUE = 'p_value'
-STATISTICS = [CHI_SQUARED, P_VALUE]
+STATISTICS = [CHI_SQUARED, LOG_CHI_SQUARED, P_VALUE]
 
 USE_DICT = True
 def set_use_dict(use_dict):
@@ -41,6 +42,7 @@ def load_database():
             if 'statistics' in key:
                 N = int(key.split('_')[1])
                 STATISTICS_DICT[N] = store[key]
+    print('Database loaded into memory.')
 
 
 
@@ -136,14 +138,18 @@ def calculate_statistics(N):
         
         # Convert partition to a sorted string for storage
         partition_id = get_partition_id(partition)
-        data.append((partition_id, chi_squared, multiplicity))
+        data.append((partition_id, multiplicity, chi_squared))
 
     statistics_df = pd.DataFrame(data, columns=['partition', 'multiplicity', CHI_SQUARED])
     statistics_df.set_index('partition', inplace=True)  # Set partition as the index
     statistics_df.sort_values(by=CHI_SQUARED, inplace=True)
     
+    statistics_df[LOG_CHI_SQUARED] = np.log10(statistics_df[CHI_SQUARED])
+
     total_multiplicity = statistics_df['multiplicity'].sum()
+    # print(f'Total multiplicity for N = {N}: {total_multiplicity} ~ {2**N}') # How did copilot know this? 🤔 
     statistics_df[P_VALUE] = statistics_df['multiplicity'][::-1].cumsum()[::-1] / total_multiplicity
+
 
     return statistics_df
 
@@ -204,12 +210,15 @@ def summarize_database():
                 median_val = statistic_values[
                     np.searchsorted(cumulative_multiplicities, 0.50 * total)]
                 
+                min_val = np.min(statistic_values)
+                max_val = np.max(statistic_values)
+                
                 # Append the summary statistics for this N
-                summary[stat].append([N, mode_val, median_val, mean_val, std_dev])
+                summary[stat].append([N, mode_val, min_val, median_val, max_val, mean_val, std_dev])
     
         for stat in STATISTICS:
             # Create a DataFrame from the summary
-            summary_df = pd.DataFrame(summary[stat], columns=['N', 'mode', 'median', 'mean', 'std_dev'])
+            summary_df = pd.DataFrame(summary[stat], columns=['N', 'mode', 'min', 'median', 'max', 'mean', 'std_dev'])
             
             # Sort by N and set as the index
             summary_df.sort_values(by='N', inplace=True)
@@ -256,6 +265,9 @@ def get_statistics(N):
         if USE_DICT:
             STATISTICS_DICT[N] = statistics_df
         return statistics_df
+
+
+# TODO: Add get_summary functionality (need to split up the summarize_database method)
 
 
 print("Ultimate Sleuthbuilder ready!")

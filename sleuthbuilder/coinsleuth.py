@@ -8,7 +8,22 @@ import seaborn as sns
 import os
 import concurrent.futures
 
-def load_database():
+USE_MULTITHREADING = True
+def set_multithreading(multithread):
+    global USE_MULTITHREADING
+    USE_MULTITHREADING = multithread
+
+def multithreading_enabled():
+    print(f'Multithreading enabled with {os.cpu_count()} cores available.')
+    
+def initialize_sleuthbuilder(use_db=usb.USE_DB,
+                             use_dict=usb.USE_DICT,
+                             db_folder_path=usb.DB_FOLDER_PATH,
+                             db_file_name=usb.DB_FILE_NAME):
+    usb.set_use_db(use_db)
+    usb.set_use_dict(use_dict)
+    usb.set_db_folder_path(db_folder_path)
+    usb.set_db_file_name(db_file_name)
     usb.load_database()
 
 
@@ -48,15 +63,15 @@ def analyze_sequence(seq):
     return results
 
 
-def analyze_sequence_set(sequences):    
-    # Initialize results dataframe
-    results = []
-    
-    for seq in sequences: 
-        N = len(seq)
-        sequence_stats = analyze_sequence(seq)
-        # Add sequence_stats as new row of results dataframe
-        results.append(sequence_stats)
+def analyze_sequence_set(sequences):
+    if USE_MULTITHREADING:
+        multithreading_enabled()
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            results = list(executor.map(analyze_sequence, sequences))
+    else:
+        results = []
+        for seq in sequences:
+            results.append(analyze_sequence(seq))
 
     # Return results as dataframe
     return pd.DataFrame(results)
@@ -73,10 +88,7 @@ def analyze_sequences_from_csv(data):
 
 def generate_sample_df(sample_size, N):
     sequences = [''.join(np.random.choice(['0', '1'], N)) for _ in range(sample_size)]
-    # Analyze sequence set and store in dataframe
-    sample_df = pd.DataFrame(analyze_sequence_set(sequences))
-    return sample_df  
-
+    return analyze_sequence_set(sequences)  
 
 
 def perform_trial(args):
@@ -90,13 +102,9 @@ def perform_trial(args):
     # return sample_df['p_value'].mean()
     return np.mean(statistics)
 
-
-def build_sampling_distribution(trials, sample_size, N, statistic,
-                                use_db=True,
-                                multithread=True):
-    usb.set_use_db(use_db)
+# TODO: Clean up this function
+def build_sampling_distribution(trials, sample_size, N, statistic):
     statistics_df = usb.get_statistics(N)
-
     
     # Function to run all trials
     def run_trials(trials, sample_size, N, statistic, statistics_df):
@@ -104,8 +112,8 @@ def build_sampling_distribution(trials, sample_size, N, statistic,
             sample_means = list(executor.map(perform_trial, [(sample_size, N, statistic, statistics_df) for _ in range(trials)]))
         return sample_means
     
-    if multithread:
-        print(f'Number of cores available: {os.cpu_count()}')
+    if USE_MULTITHREADING:
+        multithreading_enabled()
         sample_means = run_trials(trials, sample_size, N, statistic, statistics_df)
     else:
         sample_means = []
@@ -136,45 +144,12 @@ def calculate_moes(N, sample_size, statistic):
             margin_of_error = z_scores[level] * std_dev / np.sqrt(sample_size)
             moes[level].append(margin_of_error)
 
-    # print('Margin of Error for Various Confidence Levels')
-    # for level in confidence_levels:
-    #     print(f'{level} confidence level: {moes[level]}')
-
     return moes
 
 
-def plot_population_distribution(N, statistic, num_bins=20):
-    statistics_df = usb.get_statistics(N)
-
-    # Sample data creation
-    data = {'x': statistics_df[statistic].values,
-            'y': statistics_df['multiplicity'].values}
-
-    df = pd.DataFrame(data)
-
-    # Create the bins
-    if statistic == 'p_value':
-        bins = np.linspace(0, 1, num_bins + 1)
-    else:
-        bins = np.linspace(df['x'].min(), df['x'].max(), num_bins + 1)
-
-    # Bin the data and aggregate the counts
-    df['bin'] = pd.cut(df['x'], bins=bins, labels=False, include_lowest=True)
-    binned_data = df.groupby('bin')['y'].sum().reset_index()
-
-    # Convert bin numbers back to bin ranges for plotting
-    binned_data['bin'] = bins[:-1] + (bins[1] - bins[0]) / 2
-
-    return binned_data
-
-    # Plotting the histogram
-    # plt.figure(figsize=(10, 6))
-    # sns.barplot(x='bin', y='y', data=binned_data, palette='viridis')
-    # plt.xlabel('Values')
-    # plt.ylabel('Counts')
-    # plt.title('Binned Histogram of Values vs Counts')
-    # plt.grid(True, linestyle='--', alpha=0.7)
-    # plt.show()
+# TODO: Visualization
+def plot_distribution(N, statistic):
+    return
 
 
 
