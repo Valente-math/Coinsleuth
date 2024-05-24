@@ -12,15 +12,35 @@ def set_use_db(use_db):
     USE_DB = use_db
 
 DB_FOLDER_PATH = 'data'
-def set_db__folder_path(folder_path):
+def set_db_folder_path(folder_path):
     global DB_FOLDER_PATH
     DB_FOLDER_PATH = folder_path
-
 
 DB_FILE_NAME = 'ultimate_database.h5'
 def set_db_file_name(file_name):
     global DB_FILE_NAME
     DB_FILE_NAME = file_name
+
+CHI_SQUARED = 'chi_squared'
+P_VALUE = 'p_value'
+STATISTICS = [CHI_SQUARED, P_VALUE]
+
+USE_DICT = True
+def set_use_dict(use_dict):
+    global USE_DICT
+    USE_DICT = use_dict
+
+STATISTICS_DICT = {}
+def load_database():
+    if not USE_DB or not USE_DICT:
+        return
+    # Load the database into memory
+    db_path = get_db_path()
+    with pd.HDFStore(db_path, mode='r') as store:
+        for key in store.keys():
+            if 'statistics' in key:
+                N = int(key.split('_')[1])
+                STATISTICS_DICT[N] = store[key]
 
 
 
@@ -118,12 +138,12 @@ def calculate_statistics(N):
         partition_id = get_partition_id(partition)
         data.append((partition_id, chi_squared, multiplicity))
 
-    statistics_df = pd.DataFrame(data, columns=['partition', 'chi_squared', 'multiplicity'])
+    statistics_df = pd.DataFrame(data, columns=['partition', 'multiplicity', CHI_SQUARED])
     statistics_df.set_index('partition', inplace=True)  # Set partition as the index
-    statistics_df.sort_values(by='chi_squared', inplace=True)
+    statistics_df.sort_values(by=CHI_SQUARED, inplace=True)
     
     total_multiplicity = statistics_df['multiplicity'].sum()
-    statistics_df['p_value'] = statistics_df['multiplicity'][::-1].cumsum()[::-1] / total_multiplicity
+    statistics_df[P_VALUE] = statistics_df['multiplicity'][::-1].cumsum()[::-1] / total_multiplicity
 
     return statistics_df
 
@@ -151,10 +171,10 @@ def record_data(store, key, data):
 
 def summarize_database():
     db_path = get_db_path()  # Get the path to the database
-    statistics = ['chi_squared', 'p_value']
+    # STATISTICS = ['chi_squared', 'p_value']
 
     # Initialize the summary list as dict with statistics as keys
-    summary = {stat: [] for stat in statistics}
+    summary = {stat: [] for stat in STATISTICS}
 
     with pd.HDFStore(db_path, mode='a') as store:  # Open the store in read mode
         for key in store.keys():
@@ -166,7 +186,7 @@ def summarize_database():
             cumulative_multiplicities = np.cumsum(multiplicities)
             total = np.sum(multiplicities)
 
-            for stat in statistics:
+            for stat in STATISTICS:
                 # Extract statistic values
                 statistic_values = statistics_df[stat].values
                 
@@ -187,7 +207,7 @@ def summarize_database():
                 # Append the summary statistics for this N
                 summary[stat].append([N, mode_val, median_val, mean_val, std_dev])
     
-        for stat in statistics:
+        for stat in STATISTICS:
             # Create a DataFrame from the summary
             summary_df = pd.DataFrame(summary[stat], columns=['N', 'mode', 'median', 'mean', 'std_dev'])
             
@@ -208,10 +228,7 @@ def build_database(lower_bound, upper_bound, summarize=True):
     with pd.HDFStore(db_path, mode='a') as store:  # Open the store in append mode
         for N in range(lower_bound, upper_bound + 1):
             db_key = get_db_key('statistics', N)
-            if db_key in store.keys():  # Check if the key already exists in the database
-                print(f'Skipping N = {N}, already exists in the database.')
-            else:
-                print(f'Processing N = {N}...')
+            if db_key not in store.keys():  
                 statistics_df = calculate_statistics(N)
                 record_data(store, db_key, statistics_df)
         if summarize:
@@ -219,82 +236,26 @@ def build_database(lower_bound, upper_bound, summarize=True):
         return store
 
 
-
-### Analyze Sequences
-
-def get_sequence_partition(seq):
-    N = len(seq)
-    partition = []
-    current_run_length = 1
-    current_char = seq[0]
-
-    for i in range(1, N):
-        if seq[i] == current_char:
-            # Run continues
-            current_run_length += 1
-        else:
-            # Run ended by opposing flip
-            partition.append(current_run_length)
-
-            # Reset run
-            current_run_length = 1
-            current_char = seq[i]
-
-    # Run ended by sequence termination
-    partition.append(current_run_length)
-
-    return np.array(partition)
-
-
 def get_statistics(N):
-    if USE_DB:
-        db_path = get_db_path()  # Get the path to the database
-        db_key = get_db_key('statistics', N)
-        with pd.HDFStore(db_path, mode='a') as store:
-            # print(f'Search for {key} in {store.keys()}')
-            if db_key not in store.keys():
-                # print(f'Data for N = {N} not found. Generating and saving now...')
-                build_database(N, N)
-            statistics_df = store[db_key]
+    # Attempt to retrieve statistics from memory, if available. Otherwise, calculate and return.
+    if N in STATISTICS_DICT:
+        # Pull from the dictionary
+        return STATISTICS_DICT[N]
     else:
-        statistics_df = calculate_statistics(N)
-    return statistics_df
+        if USE_DB:
+            db_path = get_db_path()
+            db_key = get_db_key('statistics', N)
+            with pd.HDFStore(db_path, mode='a') as store:
+                # print(f'Search for {key} in {store.keys()}')
+                if db_key not in store.keys():
+                    # print(f'Data for N = {N} not found. Generating and saving now...')
+                    build_database(N, N)
+                statistics_df = store[db_key]
+        else:
+            statistics_df = calculate_statistics(N)
+        if USE_DICT:
+            STATISTICS_DICT[N] = statistics_df
+        return statistics_df
 
 
-def analyze_sequence(seq, statistics_df=None):
-    N = len(seq)
-    partition = get_sequence_partition(seq)
-    partition_id = get_partition_id(partition)
-
-    if statistics_df is None:
-        statistics_df = get_statistics(N)
-
-    chi_squared = statistics_df.loc[partition_id, 'chi_squared']
-    p_value = statistics_df.loc[partition_id, 'p_value']
-    return {
-        'sequence' : seq,
-        'length' : N, 
-        'chi_squared' : chi_squared, 
-        'p_value' : p_value
-        }
-            
-
-def analyze_sequence_set(sequences):
-    # Initialize statistics dictionary
-    lengths = {len(seq) for seq in sequences}
-    statistics = {N : get_statistics(N) for N in lengths}
-    
-    # Initialize results dataframe
-    results = []
-    
-    for seq in sequences: 
-        N = len(seq)
-        statistics_df = statistics[N]
-        sequence_stats = analyze_sequence(seq, statistics_df)
-        # Add sequence_stats as new row of results dataframe
-        results.append(sequence_stats)
-
-    # Return results as dataframe
-    return pd.DataFrame(results)
-    
-
+print("Ultimate Sleuthbuilder ready!")
