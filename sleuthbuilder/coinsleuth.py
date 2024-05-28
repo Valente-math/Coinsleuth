@@ -77,13 +77,20 @@ def analyze_sequence_set(sequences):
     return pd.DataFrame(results)
 
 
-def analyze_sequences_from_csv(data):
+def analyze_sequences_from_csv(filename):
     # Read in data from CSV file
-    data = pd.read_csv(data)
+    data = pd.read_csv(filename)
+    # Filter out by 'type' column
+    data = data[data['type'] == 'initial']
     sequences = data['sequence']
+    analysis = analyze_sequence_set(sequences)
     # Convert sequences to numpy array
     # sequences = np.array(sequences)
-    return analyze_sequence_set(sequences)
+    # Add analysis to dataframe
+    for stat in usb.STATISTICS:
+        data[stat] = analysis[stat]
+    return data
+    # return analyze_sequence_set(sequences)
 
 
 def generate_sample_df(sample_size, N):

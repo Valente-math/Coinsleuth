@@ -48,7 +48,7 @@ def load_database():
 
 ### Calculate Statistics
 
-def get_expected_counts(N):
+def get_expected_counts(N):    
     # Define coefficient function
     def c(n, N):
         if n >  N:
@@ -64,6 +64,7 @@ def get_expected_counts(N):
 
 
 def integer_partitions(n):
+    
     a = [0] * (n + 1)
     k = 1
     y = n - 1
