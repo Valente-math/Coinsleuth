@@ -57,7 +57,7 @@ def analyze_sequence(seq):
     statistics_df = usb.get_statistics(N)
 
     partition_id = get_sequence_partition_id(seq)
-    for stat in usb.STATISTICS:
+    for stat in usb.TEST_STATISTICS:
         results[stat] = statistics_df.loc[partition_id, stat]
 
     return results
@@ -87,7 +87,7 @@ def analyze_sequences_from_csv(filename):
     # Convert sequences to numpy array
     # sequences = np.array(sequences)
     # Add analysis to dataframe
-    for stat in usb.STATISTICS:
+    for stat in usb.TEST_STATISTICS:
         data[stat] = analysis[stat]
     return data
     # return analyze_sequence_set(sequences)
