@@ -91,7 +91,6 @@ def integer_partitions(n):
 
 def get_partition_id(partition):
     return '+'.join(map(str, sorted(partition)))  
-    # return hash(tuple(sorted(partition)))
 
 
 def get_chi_squared(observed, expected):
@@ -178,7 +177,6 @@ def record_data(store, key, data):
 
 def summarize_database():
     db_path = get_db_path()  # Get the path to the database
-    # STATISTICS = ['chi_squared', 'p_value']
 
     # Initialize the summary list as dict with statistics as keys
     summary = {stat: [] for stat in STATISTICS}
@@ -256,9 +254,7 @@ def get_statistics(N):
             db_path = get_db_path()
             db_key = get_db_key('statistics', N)
             with pd.HDFStore(db_path, mode='a') as store:
-                # print(f'Search for {key} in {store.keys()}')
                 if db_key not in store.keys():
-                    # print(f'Data for N = {N} not found. Generating and saving now...')
                     build_database(N, N)
                 statistics_df = store[db_key]
         else:
@@ -266,9 +262,6 @@ def get_statistics(N):
         if USE_DICT:
             STATISTICS_DICT[N] = statistics_df
         return statistics_df
-
-
-# TODO: Add get_summary functionality (need to split up the summarize_database method)
 
 
 print("Ultimate Sleuthbuilder ready!")
