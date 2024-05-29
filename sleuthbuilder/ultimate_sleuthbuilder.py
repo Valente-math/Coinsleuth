@@ -26,35 +26,22 @@ LOG_CHI_SQUARED = 'log_chi_squared'
 P_VALUE = 'p_value'
 TEST_STATISTICS = [CHI_SQUARED, LOG_CHI_SQUARED, P_VALUE]
 
-MIN = 'min'
-MAX = 'max'
 MEAN = 'mean'
-MEDIAN = 'median'
-MODE = 'mode'
 STD_DEV = 'std_dev'
-SUMMARY_STATISTICS = [MIN, MAX, MEAN, MEDIAN, MODE, STD_DEV]
+MIN = 'min'
+Q1 = 'Q1'
+MEDIAN = 'median'
+Q3 = 'Q3'
+MAX = 'max'
+MODE = 'mode'
+SUMMARY_STATISTICS = [MEAN, STD_DEV, MIN, Q1, MEDIAN, Q3, MAX, MODE]
 
-USE_DICT = True
-def set_use_dict(use_dict):
-    global USE_DICT
-    USE_DICT = use_dict
-
+USE_DICTS = True
 STATISTICS_DICT = {}
 SUMMARY_DICT = {}
-def load_database():
-    if not USE_DB or not USE_DICT:
-        return
-    # Load the database into memory
-    db_path = get_db_path()
-    with pd.HDFStore(db_path, mode='r') as store:
-        for key in store.keys():
-            if 'statistics' in key:
-                N = int(key.split('_')[1])
-                STATISTICS_DICT[N] = store[key]
-            if 'summary' in key:
-                stat = key.split('/')[1]
-                SUMMARY_DICT[stat] = store[key]
-    print('Database loaded into memory.')
+def set_use_dict(use_dict):
+    global USE_DICTS
+    USE_DICTS = use_dict
 
 
 
@@ -174,12 +161,13 @@ def get_db_path():
     # Returned the full database path
     return os.path.join(DB_FOLDER_PATH, DB_FILE_NAME)
 
+    
+def get_db_key(N, name):
+    return f'/N_{N}/{name}'
 
-def get_db_key(name, N=None):
-    if N is None:
-        return f'/{name}'
-    else:
-        return f'/{name}/N_{N}'
+
+def extract_seq_length(key):
+    return int(key.split('_')[1].split('/')[0])
 
 
 def record_data(store, key, data):
@@ -191,7 +179,7 @@ def build_database(lower_bound, upper_bound):
 
     with pd.HDFStore(db_path, mode='a') as store:  # Open the store in append mode
         for N in range(lower_bound, upper_bound + 1):
-            db_key = get_db_key('statistics', N)
+            db_key = get_db_key(N, 'statistics')
             if db_key not in store.keys():  
                 statistics_df = calculate_statistics(N)
                 record_data(store, db_key, statistics_df)
@@ -206,148 +194,126 @@ def get_statistics(N):
     else:
         if USE_DB:
             db_path = get_db_path()
-            db_key = get_db_key('statistics', N)
+            db_key = get_db_key(N, 'statistics')
             with pd.HDFStore(db_path, mode='a') as store:
                 if db_key not in store.keys():
                     build_database(N, N)
                 statistics_df = store[db_key]
         else:
             statistics_df = calculate_statistics(N)
-        if USE_DICT:
+        if USE_DICTS:
             STATISTICS_DICT[N] = statistics_df
         return statistics_df
 
 
-def summarize_statistics(N):
+def calculate_summary(N):
     statistics_df = get_statistics(N)
     multiplicities = statistics_df['multiplicity'].values
     cumulative_multiplicities = np.cumsum(multiplicities)
     total = 2**N
 
-    summary_df = pd.DataFrame(index=TEST_STATISTICS, columns=['N', *SUMMARY_STATISTICS])
-    summary_df['N'] = N
-    
+    summary_data = [] 
+
     for test_stat in TEST_STATISTICS:
-        summary_statistics = {summary_stat : None for summary_stat in SUMMARY_STATISTICS}
         # Extract statistic values
         statistic_values = statistics_df[test_stat].values
         
+        summary_statistics = {} 
+
         # Calculate the mean
-        mean_val = np.sum(statistic_values * multiplicities) / total
-        summary_statistics[MEAN] = mean_val
+        if MEAN in SUMMARY_STATISTICS:
+            mean_val = np.sum(statistic_values * multiplicities) / total
+            summary_statistics[MEAN] = mean_val
 
         # Calculate the standard deviation
-        std_dev = np.sqrt(np.sum(((statistic_values - mean_val)**2) * multiplicities) / (total - 1))
-        summary_statistics[STD_DEV] = std_dev
+        if STD_DEV in SUMMARY_STATISTICS:
+            std_dev = np.sqrt(np.sum(((statistic_values - mean_val)**2) * multiplicities) / (total - 1))
+            summary_statistics[STD_DEV] = std_dev
         
         # Calculate the mode
-        mode_index = np.argmax(multiplicities)
-        mode_val = statistic_values[mode_index]
-        summary_statistics[MODE] = mode_val
+        if MODE in SUMMARY_STATISTICS:
+            mode_index = np.argmax(multiplicities)
+            mode_val = statistic_values[mode_index]
+            summary_statistics[MODE] = mode_val
         
-        # Calculate the median
-        median_val = statistic_values[np.searchsorted(cumulative_multiplicities, 0.50 * total)]
-        summary_statistics[MEDIAN] = median_val
+        # Calculate the median and quartiles
+        if Q1 in SUMMARY_STATISTICS:
+            q1_val = statistic_values[np.searchsorted(cumulative_multiplicities, 0.25 * total)]
+            summary_statistics[Q1] = q1_val
+
+        if MEDIAN in SUMMARY_STATISTICS:
+            median_val = statistic_values[np.searchsorted(cumulative_multiplicities, 0.50 * total)]
+            summary_statistics[MEDIAN] = median_val
+
+        if Q3 in SUMMARY_STATISTICS:
+            q3_val = statistic_values[np.searchsorted(cumulative_multiplicities, 0.75 * total)]
+            summary_statistics[Q3] = q3_val
         
         # Calculate the min and max
-        min_val = np.min(statistic_values)
-        summary_statistics[MIN] = min_val
+        if MIN in SUMMARY_STATISTICS:
+            min_val = np.min(statistic_values)
+            summary_statistics[MIN] = min_val
 
-        max_val = np.max(statistic_values)
-        summary_statistics[MAX] = max_val
+        if MAX in SUMMARY_STATISTICS:
+            max_val = np.max(statistic_values)
+            summary_statistics[MAX] = max_val
 
-        for summary_stat in SUMMARY_STATISTICS:
-            summary_df.loc[test_stat, summary_stat] = summary_statistics[summary_stat]
-        
+        summary = [summary_statistics[stat] for stat in SUMMARY_STATISTICS]
+        summary_data.append([test_stat, *summary])
+
+    summary_df = pd.DataFrame(summary_data, columns=['test_stat',*SUMMARY_STATISTICS])
+    summary_df.set_index('test_stat', inplace=True)
     return summary_df
-        # Append the summary statistics for this N
-        # summary[test_stat].append([N, mode_val, min_val, median_val, max_val, mean_val, std_dev])
-        
-        # Filter summary_df by when the index is 'chi_squared'
-
-
-def summarize_database_v2():
-    # Summarize the database using the summarize_statistics method
-    db_path = get_db_path()  # Get the path to the database
-
-    # Initialize summary_df
-    summary_df = None
-
-    with pd.HDFStore(db_path, mode='a') as store:  # Open the store in read mode
-        for key in store.keys():
-            if 'statistics' in key:
-                N = int(key.split('_')[1])
-                # Merge the summary statistics for this N to summary_df
-                summary_df = pd.concat([summary_df, summarize_statistics(N)])
-        
-        # Sort the summary_df by 'N'
-        summary_df.sort_values(by='N', inplace=True)
-
-        # Split the summary_df by the index
-        for test_stat in TEST_STATISTICS:
-            summary_key = get_db_key(f'summary/{test_stat}')
-            stat_summary = summary_df.loc[test_stat]
-            stat_summary.reset_index(drop=True, inplace=True)
-            record_data(store, summary_key, summary_df.loc[test_stat])
-
-    return summary_df
-
 
 
 def summarize_database():
-    db_path = get_db_path()  # Get the path to the database
+    db_path = get_db_path()  
 
-    # Initialize the summary list as dict with statistics as keys
-    summary = {stat: [] for stat in TEST_STATISTICS}
-
-    with pd.HDFStore(db_path, mode='a') as store:  # Open the store in read mode
+    with pd.HDFStore(db_path, mode='a') as store: 
         for key in store.keys():
-            N = int(key.split('_')[1])
-            statistics_df = store[key]
+            if 'statistics' in key:
+                N = extract_seq_length(key)
+                summary_key = get_db_key(N, 'summary')
+                summary_df = calculate_summary(N)
+                record_data(store, summary_key, summary_df)
 
-            # Calculate multiplities and cumulative totals
-            multiplicities = statistics_df['multiplicity'].values
-            cumulative_multiplicities = np.cumsum(multiplicities)
-            total = np.sum(multiplicities)
 
-            for stat in TEST_STATISTICS:
-                # Extract statistic values
-                statistic_values = statistics_df[stat].values
-                
-                # Calculate the mean
-                mean_val = np.sum(statistic_values * multiplicities) / total
+def get_summary(N):
+    # Attempt to retrieve from memory, if available. Otherwise, calculate and return.
+    if N in SUMMARY_DICT:
+        # Pull from the dictionary
+        return SUMMARY_DICT[N]
+    else:
+        if USE_DB:
+            db_path = get_db_path()
+            summ_key = get_db_key(N, 'summary')
+            with pd.HDFStore(db_path, mode='a') as store:
+                if summ_key not in store.keys():
+                    stat_key = get_db_key(N, 'statistics')
+                    if stat_key not in store.keys():
+                        build_database(N, N)
+                    summarize_database()
+                summary_df = store[summ_key]
+        else:
+            summary_df = calculate_summary(N)
+        if USE_DICTS:
+            SUMMARY_DICT[N] = summary_df
+        return summary_df
 
-                # Calculate the standard deviation
-                std_dev = np.sqrt(np.sum(((statistic_values - mean_val)**2) * multiplicities) / (total - 1))
-                
-                # Calculate the mode
-                mode_index = np.argmax(multiplicities)
-                mode_val = statistic_values[mode_index]
-                
-                # Calculate the median
-                median_val = statistic_values[
-                    np.searchsorted(cumulative_multiplicities, 0.50 * total)]
-                
-                min_val = np.min(statistic_values)
-                max_val = np.max(statistic_values)
-                
-                # Append the summary statistics for this N
-                summary[stat].append([N, mode_val, min_val, median_val, max_val, mean_val, std_dev])
-    
-        for stat in TEST_STATISTICS:
-            # Create a DataFrame from the summary
-            summary_df = pd.DataFrame(summary[stat], columns=['N', 'mode', 'min', 'median', 'max', 'mean', 'std_dev'])
-            
-            # Sort by N and set as the index
-            summary_df.sort_values(by='N', inplace=True)
-            summary_df.set_index('N', inplace=True)
 
-            # Save to database
-            summary_key = get_db_key(f'summary/{stat}')
-            record_data(store, summary_key, summary_df)
-
-    return summary_df
-
+def load_database():
+    if not USE_DB or not USE_DICTS:
+        return
+    # Load the database into memory
+    db_path = get_db_path()
+    with pd.HDFStore(db_path, mode='r') as store:
+        for key in store.keys():
+            N = extract_seq_length(key)
+            if 'statistics' in key:
+                STATISTICS_DICT[N] = store[key]
+            if 'summary' in key:
+                SUMMARY_DICT[N] = store[key]
+    print('Database loaded into memory.')
 
 
 print("Ultimate Sleuthbuilder ready!")

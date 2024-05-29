@@ -17,7 +17,7 @@ def multithreading_enabled():
     print(f'Multithreading enabled with {os.cpu_count()} cores available.')
     
 def initialize_sleuthbuilder(use_db=usb.USE_DB,
-                             use_dict=usb.USE_DICT,
+                             use_dict=usb.USE_DICTS,
                              db_folder_path=usb.DB_FOLDER_PATH,
                              db_file_name=usb.DB_FILE_NAME):
     usb.set_use_db(use_db)
@@ -72,6 +72,8 @@ def analyze_sequence_set(sequences):
         results = []
         for seq in sequences:
             results.append(analyze_sequence(seq))
+
+    # TODO: Perform Z-Test using summary statistics
 
     # Return results as dataframe
     return pd.DataFrame(results)
@@ -155,8 +157,8 @@ def calculate_moes(N, sample_size, statistic):
 
 
 # TODO: Visualization
-def plot_distribution(N, statistic):
-    return
+# def plot_distribution(N, statistic):
+#     return
 
 
 
