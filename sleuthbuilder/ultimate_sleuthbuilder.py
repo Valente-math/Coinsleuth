@@ -24,6 +24,8 @@ def set_db_file_name(file_name):
 CHI_SQUARED = 'chi_squared'
 LOG_CHI_SQUARED = 'log_chi_squared'
 P_VALUE = 'p_value'
+# TODO: MAX_RUN = 'max_run'
+#       AVG_RUN = 'avg_run'
 TEST_STATISTICS = [CHI_SQUARED, LOG_CHI_SQUARED, P_VALUE]
 
 MEAN = 'mean'
