@@ -1,4 +1,4 @@
-import ultimate_sleuthbuilder as usb
+import sleuthbuilder.enhanced_sleuthbuilder as usb
 
 import numpy as np
 import pandas as pd
