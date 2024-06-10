@@ -16,19 +16,17 @@ def set_db_folder_path(folder_path):
     global DB_FOLDER_PATH
     DB_FOLDER_PATH = folder_path
 
-DB_FILE_NAME = 'ultimate_database.h5'
+DB_FILE_NAME = 'ultimate_database2.h5'
 def set_db_file_name(file_name):
     global DB_FILE_NAME
     DB_FILE_NAME = file_name
 
 CHI_SQUARED = 'chi_squared'
 LOG_CHI_SQUARED = 'log_chi_squared'
-P_VALUE = 'p_value'
-MAX_RUN = 'max_run'
-AVG_RUN = 'avg_run'
-BALANCE = 'balance'
-P_STAR  = 'p_star'
-TEST_STATISTICS = [CHI_SQUARED, LOG_CHI_SQUARED, P_VALUE]
+P_VALUE = 'p_value' # P-value of chi-squared statistic
+MAX_RUN = 'max_run' # Maximum run length
+AVG_RUN = 'avg_run' # Average run length
+TEST_STATISTICS = [CHI_SQUARED, LOG_CHI_SQUARED, P_VALUE, MAX_RUN, AVG_RUN]
 
 MEAN = 'mean'
 STD_DEV = 'std_dev'
@@ -91,8 +89,8 @@ def integer_partitions(n):
         yield a[:k + 1]
 
 
-def get_partition_id(partition):
-    return '+'.join(map(str, sorted(partition)))  
+def get_partition_id(partition, delimiter='+'):
+    return delimiter.join(map(str, sorted(partition)))  
 
 
 def get_chi_squared(observed, expected):
@@ -138,20 +136,25 @@ def calculate_statistics(N):
         chi_squared = get_chi_squared(observed_counts, expected_counts)
         multiplicity = count_multiplicity(partition)
         
+        max_run = max(partition)
+        avg_run = np.mean(partition)
+
         # Convert partition to a sorted string for storage
         partition_id = get_partition_id(partition)
-        data.append((partition_id, multiplicity, chi_squared))
+        data.append((partition_id, multiplicity, 
+                     max_run, avg_run, chi_squared))
 
-    statistics_df = pd.DataFrame(data, columns=['partition', 'multiplicity', CHI_SQUARED])
+    statistics_df = pd.DataFrame(data, columns=['partition', 'multiplicity', 
+                                                MAX_RUN, AVG_RUN, CHI_SQUARED])
+    
     statistics_df.set_index('partition', inplace=True)  # Set partition as the index
     statistics_df.sort_values(by=CHI_SQUARED, inplace=True)
     
     statistics_df[LOG_CHI_SQUARED] = np.log10(statistics_df[CHI_SQUARED])
 
-    total_multiplicity = statistics_df['multiplicity'].sum()
+    total_multiplicity = 2**N #statistics_df['multiplicity'].sum()
     # print(f'Total multiplicity for N = {N}: {total_multiplicity} ~ {2**N}') # How did copilot know this? 🤔 
     statistics_df[P_VALUE] = statistics_df['multiplicity'][::-1].cumsum()[::-1] / total_multiplicity
-
 
     return statistics_df
 
