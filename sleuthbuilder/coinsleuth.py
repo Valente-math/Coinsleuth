@@ -5,10 +5,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from scipy import stats
+
 import os
 import concurrent.futures
 
-USE_MULTITHREADING = True
+USE_MULTITHREADING = False
 def set_multithreading(multithread):
     global USE_MULTITHREADING
     USE_MULTITHREADING = multithread
@@ -63,44 +65,50 @@ def analyze_sequence(seq):
     return results
 
 
-def analyze_sequence_set(sequences):
+def analyze_sequence_sample(sequences):
     if USE_MULTITHREADING:
         multithreading_enabled()
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            results = list(executor.map(analyze_sequence, sequences))
+            sample_analysis = list(executor.map(analyze_sequence, sequences))
     else:
-        results = []
+        sample_analysis = []
         for seq in sequences:
-            results.append(analyze_sequence(seq))
+            sample_analysis.append(analyze_sequence(seq))
 
-    # TODO: Perform Z-Test using summary statistics
+    # Return results as dataframes
+    return pd.DataFrame(sample_analysis)
 
-    # Return results as dataframe
-    return pd.DataFrame(results)
+
+def test_sample(sample_analysis):
+    N = len(sample_analysis['sequence'][0]) # Assume all sequences are the same length
+    test_results = []
+    for stat in usb.TEST_STATISTICS:
+        sample_mean = np.mean(sample_analysis[stat])
+        pop_mean = usb.get_summary(N).loc[stat, 'mean']
+        std_dev = usb.get_summary(N).loc[stat, 'std_dev']
+        std_error = std_dev / np.sqrt(len(sample_analysis)) # Population standard deviation / sqrt(sample size)
+        z_score = (sample_mean - pop_mean) / std_error
+        p_value = stats.norm.sf(abs(z_score)) * 2 # Two-tailed test
+        test_results.append((stat, p_value))
+
+    test_results = pd.DataFrame(test_results, columns=['test_stat', 'p_value'])
+
+    # Return results as dataframes
+    return test_results
 
 
 def analyze_sequences_from_csv(filename):
     # Read in data from CSV file
     data = pd.read_csv(filename)
     sequences = data['sequence']
-    analysis = analyze_sequence_set(sequences)
+    sample_analysis = analyze_sequence_sample(sequences)
     # Return merged analysis with data
-    return pd.merge(data, analysis, on='sequence')
-
-
-    # return pd.merge(data, analysis, on='sequence')
-    # Convert sequences to numpy array
-    # sequences = np.array(sequences)
-    # Add analysis to dataframe
-    # for stat in usb.TEST_STATISTICS:
-    #     data[stat] = analysis[stat]
-    # return data
-    # return analyze_sequence_set(sequences)
+    return pd.merge(data, sample_analysis, on='sequence')
 
 
 def generate_sample_df(sample_size, N):
     sequences = [''.join(np.random.choice(['0', '1'], N)) for _ in range(sample_size)]
-    return analyze_sequence_set(sequences)  
+    return analyze_sequence_sample(sequences)  
 
 
 def perform_trial(args):
