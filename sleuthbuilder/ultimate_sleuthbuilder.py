@@ -16,7 +16,7 @@ def set_db_folder_path(folder_path):
     global DB_FOLDER_PATH
     DB_FOLDER_PATH = folder_path
 
-DB_FILE_NAME = 'ultimate_database2.h5'
+DB_FILE_NAME = 'ultimate_database.h5'
 def set_db_file_name(file_name):
     global DB_FILE_NAME
     DB_FILE_NAME = file_name

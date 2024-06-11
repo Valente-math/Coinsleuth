@@ -7,16 +7,6 @@ import seaborn as sns
 
 from scipy import stats
 
-import os
-import concurrent.futures
-
-USE_MULTITHREADING = False
-def set_multithreading(multithread):
-    global USE_MULTITHREADING
-    USE_MULTITHREADING = multithread
-
-def multithreading_enabled():
-    print(f'Multithreading enabled with {os.cpu_count()} cores available.')
     
 def initialize_sleuthbuilder(use_db=usb.USE_DB,
                              use_dict=usb.USE_DICTS,
@@ -66,14 +56,14 @@ def analyze_sequence(seq):
 
 
 def analyze_sequence_sample(sequences):
-    if USE_MULTITHREADING:
-        multithreading_enabled()
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            sample_analysis = list(executor.map(analyze_sequence, sequences))
-    else:
-        sample_analysis = []
-        for seq in sequences:
-            sample_analysis.append(analyze_sequence(seq))
+    # if USE_MULTITHREADING:
+    #     multithreading_enabled()
+    #     with concurrent.futures.ProcessPoolExecutor() as executor:
+    #         sample_analysis = list(executor.map(analyze_sequence, sequences))
+    # else:
+    sample_analysis = []
+    for seq in sequences:
+        sample_analysis.append(analyze_sequence(seq))
 
     # Return results as dataframes
     return pd.DataFrame(sample_analysis)
@@ -112,62 +102,6 @@ def analyze_sequences_from_csv(filename):
 def generate_sample_df(sample_size, N):
     sequences = [''.join(np.random.choice(['0', '1'], N)) for _ in range(sample_size)]
     return analyze_sequence_sample(sequences)  
-
-
-def perform_trial(args):
-    sample_size, N, statistic, statistics_df = args
-    sequences = [''.join(np.random.choice(['0', '1'], N)) for _ in range(sample_size)]
-    statistics = []
-    for seq in sequences:
-        sample_stats = analyze_sequence(seq, statistics_df)
-        statistics.append(sample_stats[statistic])
-    # sample_df = usb.analyze_sequence_set(sequences)
-    # return sample_df['p_value'].mean()
-    return np.mean(statistics)
-
-# TODO: Clean up this function
-def build_sampling_distribution(trials, sample_size, N, statistic):
-    statistics_df = usb.get_statistics(N)
-    
-    # Function to run all trials
-    def run_trials(trials, sample_size, N, statistic, statistics_df):
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            sample_means = list(executor.map(perform_trial, [(sample_size, N, statistic, statistics_df) for _ in range(trials)]))
-        return sample_means
-    
-    if USE_MULTITHREADING:
-        multithreading_enabled()
-        sample_means = run_trials(trials, sample_size, N, statistic, statistics_df)
-    else:
-        sample_means = []
-        for trial in range(trials):
-            args = (sample_size, N, statistic, statistics_df)
-            sample_mean = perform_trial(args)
-            sample_means.append(sample_mean)
-
-    sampling_distribution = pd.DataFrame(sample_means, columns=[f'Mean {statistic}'])
-    return sampling_distribution
-
-
-def calculate_moes(N, sample_size, statistic):
-    db_path = usb.get_db_path()  # Get the path to the database
-    key = usb.get_db_key(f'summary/{statistic}')
-
-    z_scores = {0.90 : 1.645, 0.95 : 1.960, 0.99 : 2.576, 0.999 : 3.291}
-    confidence_levels = z_scores.keys()
-    moes = {level : [] for level in confidence_levels}
-    for level in confidence_levels:
-        # Open the hd5 database at usb.get_db_path()
-
-        with pd.HDFStore(db_path, mode='r') as store:  # Open the store in append mode
-            summary_df = store[key]
-            
-            # Get standard deviation for sequences of length N
-            std_dev = summary_df.loc[N, 'std_dev']
-            margin_of_error = z_scores[level] * std_dev / np.sqrt(sample_size)
-            moes[level].append(margin_of_error)
-
-    return moes
 
 
 # TODO: Visualization
