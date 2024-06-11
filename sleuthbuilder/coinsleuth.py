@@ -83,12 +83,15 @@ def test_sample(sample_analysis):
     N = len(sample_analysis['sequence'][0]) # Assume all sequences are the same length
     test_results = []
     for stat in usb.TEST_STATISTICS:
-        sample_mean = np.mean(sample_analysis[stat])
+        values = sample_analysis[stat]
+
+        sample_mean = np.mean(values)
         pop_mean = usb.get_summary(N).loc[stat, 'mean']
         std_dev = usb.get_summary(N).loc[stat, 'std_dev']
         std_error = std_dev / np.sqrt(len(sample_analysis)) # Population standard deviation / sqrt(sample size)
         z_score = (sample_mean - pop_mean) / std_error
         p_value = stats.norm.sf(abs(z_score)) * 2 # Two-tailed test
+
         test_results.append((stat, p_value))
 
     test_results = pd.DataFrame(test_results, columns=['test_stat', 'p_value'])
