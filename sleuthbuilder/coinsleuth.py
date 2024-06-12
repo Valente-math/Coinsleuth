@@ -56,11 +56,6 @@ def analyze_sequence(seq):
 
 
 def analyze_sequence_sample(sequences):
-    # if USE_MULTITHREADING:
-    #     multithreading_enabled()
-    #     with concurrent.futures.ProcessPoolExecutor() as executor:
-    #         sample_analysis = list(executor.map(analyze_sequence, sequences))
-    # else:
     sample_analysis = []
     for seq in sequences:
         sample_analysis.append(analyze_sequence(seq))
